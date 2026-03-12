@@ -8,8 +8,6 @@ import boto3
 import hashlib
 from typing import Dict, Any, List, AsyncGenerator, Optional
 from graph import create_react_agent
-from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
-from langchain_aws import ChatBedrockConverse
 from prompt import system_prompt
 import base64
 import inspect
@@ -198,8 +196,13 @@ def _fetch_diagram_from_s3(
         return None
 
     try:
-        # Create S3 client
-        s3_client = boto3.client("s3", region_name=REGION)
+        s3_endpoint = os.environ.get("S3_ENDPOINT")
+        s3_client_kwargs: Dict[str, Any] = {"region_name": REGION}
+        if s3_endpoint:
+            s3_client_kwargs["endpoint_url"] = s3_endpoint
+            s3_client_kwargs["aws_access_key_id"] = os.environ.get("S3_ACCESS_KEY", "minioadmin")
+            s3_client_kwargs["aws_secret_access_key"] = os.environ.get("S3_SECRET_KEY", "minioadmin")
+        s3_client = boto3.client("s3", **s3_client_kwargs)
 
         s3_key = diagram_path
         logger.debug(f"Fetching diagram from s3://{s3_bucket}/{s3_key}")
@@ -364,8 +367,8 @@ async def get_or_create_agent(
     context: Optional[Dict[str, Any]],
     diagram_path: Optional[str],
     all_available_tools: List,
-    llm: ChatBedrockConverse,
-    checkpointer: AsyncBedrockSessionSaver,
+    llm: Any,
+    checkpointer: Any,
     boto_client,
     s3_bucket: str,
     logger,

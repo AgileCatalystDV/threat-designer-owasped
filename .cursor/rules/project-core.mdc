@@ -1,0 +1,39 @@
+---
+description: Kernprincipes voor threat-designer-owasped — altijd van toepassing
+alwaysApply: true
+---
+
+# Project: threat-designer-owasped
+
+Fork van awslabs/threat-designer (Apache 2.0). Doel: volledig lokale, containerized variant zonder AWS vendor lock-in, bedoeld als OWASP-bijdrage.
+
+## Principes
+
+- **Chirurgische precisie** — vervang één AWS-dienst per keer; raak de business logic niet aan
+- **KISS** — geen over-engineering; werkende lokale tool is het doel
+- **Plan eerst** — toon altijd een plan + motivatie aan LeadPM vóór implementatie; wacht op goedkeuring
+- **OWASP-first** — open source, vendor-agnostic, community-gericht
+
+## Stack (target)
+
+| Vervangen | Door |
+|-----------|------|
+| Amazon DynamoDB | DynamoDB Local (drop-in, zelfde SDK) |
+| Amazon S3 | MinIO (S3-compatible API) |
+| AWS Lambda handlers | FastAPI endpoints |
+| AWS Bedrock / OpenAI | Ollama (OpenAI-compat) of externe LLM tijdelijk |
+| Amazon Cognito + Amplify auth | Geen auth (persoonlijk gebruik) |
+| Bedrock AgentCore (Sentry) | Eenvoudige Python agent loop |
+
+## AWS-dependency aanpak
+
+```python
+# boto3 → lokaal endpoint
+dynamodb = boto3.resource('dynamodb', endpoint_url='http://dynamodb-local:8001')
+s3 = boto3.client('s3', endpoint_url='http://minio:9000',
+    aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
+
+# OpenAI-compat voor LLM (Ollama of tijdelijk extern)
+from openai import OpenAI
+client = OpenAI(base_url=os.environ['INFERENCE_BASE_URL'], api_key=os.environ.get('INFERENCE_API_KEY', 'local'))
+```

@@ -11,13 +11,11 @@ from langchain_core.messages import (
     ToolMessage,
     HumanMessage,
 )
-from langchain_aws import ChatBedrockConverse
 from langchain_core.tools import BaseTool
 from langchain_core.tools.base import ToolException
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, MessagesState
 from langgraph.errors import GraphBubbleUp
-from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
 import json
 import logging
 
@@ -35,10 +33,10 @@ except ImportError:
 class ReactAgent:
     def __init__(
         self,
-        model: ChatBedrockConverse,
+        model: Any,
         tools: List[BaseTool] = [],
         prompt: str = None,
-        checkpointer: Optional[AsyncBedrockSessionSaver] = None,
+        checkpointer: Optional[Any] = None,
     ):
         self.llm = model
         self.tools = tools or []
@@ -241,10 +239,10 @@ class ReactAgent:
 
 
 def create_react_agent(
-    model: ChatBedrockConverse,
+    model: Any,
     tools: Optional[List[BaseTool]],
     prompt: SystemMessage,
-    checkpointer: Optional[AsyncBedrockSessionSaver] = None,
+    checkpointer: Optional[Any] = None,
 ):
     """Create a React agent and return the compiled graph"""
     agent = ReactAgent(

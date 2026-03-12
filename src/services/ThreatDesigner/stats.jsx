@@ -1,5 +1,4 @@
 import axios from "axios";
-import { fetchAuthSession } from "aws-amplify/auth";
 import { config } from "../../config.js";
 
 const baseUrl = config.controlPlaneAPI + "/threat-designer";
@@ -8,24 +7,15 @@ const instance = axios.create({
   baseURL: baseUrl,
 });
 
-instance.interceptors.request.use(async (config) => {
-  try {
-    const session = await fetchAuthSession();
-    const token = session.tokens.idToken.toString();
-    config.headers.Authorization = `Bearer ${token}`;
-
-    // Add cache-busting timestamp to GET requests to prevent browser caching
-    if (config.method === "get") {
-      config.params = {
-        ...config.params,
-        _t: Date.now(),
-      };
-    }
-
-    return config;
-  } catch (error) {
-    return Promise.reject(error);
+instance.interceptors.request.use((requestConfig) => {
+  // Add cache-busting timestamp to GET requests to prevent browser caching
+  if (requestConfig.method === "get") {
+    requestConfig.params = {
+      ...requestConfig.params,
+      _t: Date.now(),
+    };
   }
+  return requestConfig;
 });
 
 async function deleteTm(id) {

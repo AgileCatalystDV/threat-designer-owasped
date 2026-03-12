@@ -17,9 +17,14 @@ from constants import (
     ADAPTIVE_EFFORT_MAP,
     ADAPTIVE_THINKING_TYPE,
     AWS_SERVICE_BEDROCK_RUNTIME,
+    DEFAULT_LOCAL_MAX_TOKENS,
+    DEFAULT_LOCAL_MODEL,
     DEFAULT_REGION,
     DEFAULT_TIMEOUT,
     ENV_ADAPTIVE_THINKING_MODELS,
+    ENV_INFERENCE_API_KEY,
+    ENV_INFERENCE_BASE_URL,
+    ENV_LOCAL_MODEL,
     ENV_MAIN_MODEL,
     ENV_MODEL_PROVIDER,
     ENV_MODEL_STRUCT,
@@ -28,6 +33,7 @@ from constants import (
     ENV_REASONING_MODELS,
     ENV_REGION,
     MODEL_PROVIDER_BEDROCK,
+    MODEL_PROVIDER_OLLAMA,
     MODEL_PROVIDER_OPENAI,
     MODEL_TEMPERATURE_DEFAULT,
     MODEL_TEMPERATURE_REASONING,
@@ -620,6 +626,74 @@ def _initialize_openai_models(
         raise
 
 
+def _initialize_ollama_models(
+    job_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Initialize model clients for a local Ollama instance.
+
+    Uses the OpenAI-compatible API exposed by Ollama.  All 8 model roles
+    are mapped to the single model specified by LOCAL_MODEL (or the default).
+    Reasoning and use_responses_api are intentionally disabled — Ollama
+    does not support those OpenAI-specific features.
+
+    Args:
+        job_id: Optional job ID for operation tracking.
+
+    Returns:
+        Dict[str, ChatOpenAI]: Dictionary containing model instances.
+
+    Raises:
+        ModelProviderError: If langchain-openai is not installed.
+    """
+    if not OPENAI_AVAILABLE:
+        raise ModelProviderError(
+            "Ollama provider requires langchain-openai package. "
+            "Install with: pip install langchain-openai"
+        )
+
+    base_url = os.environ.get(ENV_INFERENCE_BASE_URL, "http://localhost:11434/v1")
+    api_key = os.environ.get(ENV_INFERENCE_API_KEY, "ollama")
+    model_id = os.environ.get(ENV_LOCAL_MODEL, DEFAULT_LOCAL_MODEL)
+    max_tokens = DEFAULT_LOCAL_MAX_TOKENS
+
+    logger.debug(
+        "Initializing Ollama models",
+        base_url=base_url,
+        model_id=model_id,
+        job_id=job_id,
+    )
+
+    def _make_ollama_model() -> Any:
+        return ChatOpenAI(
+            model=model_id,
+            max_tokens=max_tokens,
+            temperature=MODEL_TEMPERATURE_DEFAULT,
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+    models = {
+        "assets_model": _make_ollama_model(),
+        "flows_model": _make_ollama_model(),
+        "threats_model": _make_ollama_model(),
+        "threats_agent_model": _make_ollama_model(),
+        "gaps_model": _make_ollama_model(),
+        "attack_tree_agent_model": _make_ollama_model(),
+        "struct_model": _make_ollama_model(),
+        "summary_model": _make_ollama_model(),
+    }
+
+    logger.debug(
+        "Ollama models initialized successfully",
+        model_count=len(models),
+        model_id=model_id,
+        base_url=base_url,
+    )
+
+    return models
+
+
 def initialize_models(
     reasoning: int = 0,
     bedrock_client: Optional[boto3.client] = None,
@@ -670,10 +744,12 @@ def initialize_models(
                 return _initialize_bedrock_models(reasoning, bedrock_client, job_id)
             elif provider == MODEL_PROVIDER_OPENAI:
                 return _initialize_openai_models(reasoning, job_id)
+            elif provider == MODEL_PROVIDER_OLLAMA:
+                return _initialize_ollama_models(job_id)
             else:
                 raise ModelProviderError(
                     f"Unsupported model provider: {provider}. "
-                    f"Supported providers: {MODEL_PROVIDER_BEDROCK}, {MODEL_PROVIDER_OPENAI}"
+                    f"Supported providers: {MODEL_PROVIDER_BEDROCK}, {MODEL_PROVIDER_OPENAI}, {MODEL_PROVIDER_OLLAMA}"
                 )
 
         except (ModelProviderError, OpenAIAuthenticationError):

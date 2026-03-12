@@ -1,14 +1,4 @@
-import { fetchAuthSession } from "aws-amplify/auth";
-
-export const getAuthToken = async () => {
-  try {
-    const session = await fetchAuthSession();
-    return session.tokens?.accessToken?.toString();
-  } catch (error) {
-    console.error("Failed to get auth token:", error);
-    throw new Error("Authentication required");
-  }
-};
+export const getAuthToken = async () => "local-token";
 
 export const checkForInterruptInTurn = (turn) => {
   if (!turn || !turn.aiMessage || !Array.isArray(turn.aiMessage)) {

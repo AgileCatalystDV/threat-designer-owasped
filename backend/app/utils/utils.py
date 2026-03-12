@@ -1,15 +1,13 @@
 import json
+import logging
 from datetime import date, datetime, timezone
 from enum import Enum
 from json import JSONEncoder
 
-import boto3
-from aws_lambda_powertools import Logger, Tracer
-from aws_lambda_powertools.event_handler.api_gateway import Router
+from aws_clients import get_dynamodb_resource
 from exceptions.exceptions import UnauthorizedError
 
-tracer = Tracer()
-logger = Logger()
+logger = logging.getLogger(__name__)
 
 
 sensitive_attributes = [
@@ -62,38 +60,20 @@ class DateTimeEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
-def validate_user(router: Router):
+def validate_user(owner_from_request: str = None):
     """
-    Decorator to validate the API call against the owner in request body.
-    :param router: Router to get current event
-    :return: Throws an error or forwards the call to service
+    No-op decorator in local no-auth mode.
+    In production this would validate the authenticated user against the owner.
     """
-
     def decorator(func):
         def wrapper(*args, **kwargs):
-            body = router.current_event.json_body
-            owner = body.get("owner", None)
-            user_id = router.current_event.request_context.authorizer.get(
-                "username", ""
-            )
-            email = router.current_event.request_context.authorizer.get("email", "")
-
-            if user_id == owner:
-                return func(*args, **kwargs)
-            else:
-                logger.error("Owner does not match the authenticated user")
-                raise UnauthorizedError(
-                    f"User: {email} is not authorized to access this resource."
-                )
-
+            return func(*args, **kwargs)
         return wrapper
-
     return decorator
 
 
 def create_dynamodb_item(agent_state, table_name):
-    # Initialize DynamoDB client
-    dynamodb = boto3.resource("dynamodb")
+    dynamodb = get_dynamodb_resource()
     table = dynamodb.Table(table_name)
 
     # Get current UTC timestamp

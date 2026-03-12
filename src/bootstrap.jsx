@@ -3,9 +3,6 @@ import ReactDOM from "react-dom/client";
 import "./globals.css";
 import App from "./App";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { Amplify } from "aws-amplify";
-import { amplifyConfig } from "./config";
-Amplify.configure(amplifyConfig);
 
 const rootElement = document.getElementById("root");
 const root = ReactDOM.createRoot(rootElement);

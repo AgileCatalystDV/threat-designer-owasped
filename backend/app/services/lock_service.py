@@ -6,57 +6,43 @@ modifications to threat models. It implements a heartbeat-based locking
 mechanism with automatic stale lock detection and expiration.
 """
 
+import logging
 import os
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-import boto3
-from aws_lambda_powertools import Logger, Tracer
+from aws_clients import get_dynamodb_resource
 from exceptions.exceptions import InternalError, NotFoundError, UnauthorizedError
 
 # Environment variables
 LOCK_TABLE = os.environ.get("LOCKS_TABLE")
 AGENT_TABLE = os.environ.get("AGENT_STATE_TABLE")
-USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
 
 # Constants
 LOCK_EXPIRATION_SECONDS = 180  # 3 minutes
 STALE_LOCK_THRESHOLD = 180  # 3 minutes in seconds
 
-# AWS clients
-dynamodb = boto3.resource("dynamodb")
-cognito_client = boto3.client("cognito-idp")
+dynamodb = get_dynamodb_resource()
 
-LOG = Logger(serialize_stacktrace=False)
-tracer = Tracer()
+LOG = logging.getLogger(__name__)
 
 
 def get_username_from_cognito(user_id: str) -> str:
     """
-    Look up username from Cognito by user_id (sub).
+    Look up username. In local no-auth mode, user_id IS the username.
 
     Args:
-        user_id: The UUID (sub) of the user
+        user_id: The user identifier
 
     Returns:
-        Username or user_id if lookup fails
+        Username (same as user_id in local mode)
     """
-    try:
-        response = cognito_client.list_users(
-            UserPoolId=USER_POOL_ID, Filter=f'sub = "{user_id}"', Limit=1
-        )
-
-        if response.get("Users"):
-            return response["Users"][0].get("Username", user_id)
-        return user_id
-    except Exception as e:
-        LOG.warning(f"Failed to lookup username for {user_id}: {e}")
-        return user_id
+    return user_id
 
 
-@tracer.capture_method
+
 def acquire_lock(threat_model_id: str, user_id: str) -> Dict[str, Any]:
     """
     Attempt to acquire an edit lock on a threat model.
@@ -174,7 +160,7 @@ def acquire_lock(threat_model_id: str, user_id: str) -> Dict[str, Any]:
         raise InternalError(f"Failed to acquire lock: {str(e)}")
 
 
-@tracer.capture_method
+
 def refresh_lock(threat_model_id: str, user_id: str, lock_token: str) -> Dict[str, Any]:
     """
     Refresh a lock's timestamp (heartbeat).
@@ -250,7 +236,7 @@ def refresh_lock(threat_model_id: str, user_id: str, lock_token: str) -> Dict[st
         raise InternalError(f"Failed to refresh lock: {str(e)}")
 
 
-@tracer.capture_method
+
 def release_lock(threat_model_id: str, user_id: str, lock_token: str) -> Dict[str, Any]:
     """
     Explicitly release a lock (graceful release).
@@ -304,7 +290,7 @@ def release_lock(threat_model_id: str, user_id: str, lock_token: str) -> Dict[st
         raise InternalError(f"Failed to release lock: {str(e)}")
 
 
-@tracer.capture_method
+
 def get_lock_status(threat_model_id: str) -> Dict[str, Any]:
     """
     Get current lock status for a threat model.
@@ -357,7 +343,7 @@ def get_lock_status(threat_model_id: str) -> Dict[str, Any]:
         raise InternalError(f"Failed to get lock status: {str(e)}")
 
 
-@tracer.capture_method
+
 def force_release_lock(threat_model_id: str, owner: str) -> Dict[str, Any]:
     """
     Force release a lock (owner only).

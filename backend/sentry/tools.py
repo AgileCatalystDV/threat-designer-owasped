@@ -13,6 +13,18 @@ from data_model import Threat
 
 # Environment variables
 ATTACK_TREE_TABLE = os.environ.get("ATTACK_TREE_TABLE")
+_DYNAMODB_ENDPOINT = os.environ.get("DYNAMODB_ENDPOINT", "http://localhost:8001")
+_AWS_REGION = os.environ.get("AWS_REGION", os.environ.get("REGION", "us-east-1"))
+
+
+def _get_dynamodb():
+    return boto3.resource(
+        "dynamodb",
+        endpoint_url=_DYNAMODB_ENDPOINT,
+        region_name=_AWS_REGION,
+        aws_access_key_id="local",
+        aws_secret_access_key="local",
+    )
 
 
 class DecimalEncoder(json.JSONEncoder):
@@ -148,7 +160,7 @@ def get_attack_tree(threat_model_id: str, threat_name: str) -> str:
     attack_tree_id = generate_attack_tree_id(threat_model_id, threat_name)
 
     # Query DynamoDB
-    dynamodb = boto3.resource("dynamodb")
+    dynamodb = _get_dynamodb()
     table = dynamodb.Table(ATTACK_TREE_TABLE)
 
     try:

@@ -1,13 +1,9 @@
 import os
 import json
-from langgraph_checkpoint_aws.async_saver import AsyncBedrockSessionSaver
-from langgraph_checkpoint_aws.saver import BedrockSessionSaver
-from botocore.session import get_session
-from botocore.config import Config
-import boto3
+from langgraph.checkpoint.memory import MemorySaver
 from typing import Optional, Any
 
-# Try to import OpenAI support
+# Try to import OpenAI support (used for both real OpenAI and Ollama)
 try:
     from langchain_openai import ChatOpenAI
 
@@ -18,17 +14,19 @@ except ImportError:
 
 # Environment Configuration
 MODEL_ID = os.environ.get("MODEL_ID")
-S3_BUCKET = os.environ.get("S3_BUCKET")
+S3_BUCKET = os.environ.get("S3_BUCKET", os.environ.get("ARCHITECTURE_BUCKET", "threat-designer-bucket"))
 REGION = os.environ.get("REGION", "us-east-1")
-MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "bedrock")
+MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "ollama")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "64000"))
+INFERENCE_BASE_URL = os.environ.get("INFERENCE_BASE_URL", "http://localhost:11434/v1")
+INFERENCE_API_KEY = os.environ.get("INFERENCE_API_KEY", "ollama")
+LOCAL_MODEL = os.environ.get("LOCAL_MODEL", "qwen3:32b")
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "8192"))
 
 # Tavily Configuration
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY")
 
 
-# Parse reasoning budget/effort from environment
 def _parse_reasoning_config() -> dict:
     """Parse reasoning budget (Bedrock) or effort (OpenAI) from environment"""
     if MODEL_PROVIDER == "openai":
@@ -43,106 +41,47 @@ def _parse_reasoning_config() -> dict:
 
 REASONING_CONFIG = _parse_reasoning_config()
 
-# Adaptive thinking configuration
 ADAPTIVE_THINKING_MODELS = json.loads(os.environ.get("ADAPTIVE_THINKING_MODELS", "[]"))
 ADAPTIVE_EFFORT_MAP = {1: "low", 2: "medium", 3: "high", 4: "max"}
-
-# OpenAI reasoning effort mapping (fallback for backward compatibility)
 OPENAI_REASONING_EFFORT_MAP = {0: "none", 1: "low", 2: "medium", 3: "high"}
 
+# LangGraph checkpointer — MemorySaver keeps conversation state in-process.
+# Sessions survive requests (the agent is a long-lived singleton) but reset on restart.
+checkpointer = MemorySaver()
 
-def create_bedrock_client(
-    region: Optional[str] = REGION, config: Optional[Config] = None
-) -> boto3.client:
-    """
-    Create Bedrock client
-    """
-    config = config or Config(read_timeout=1000)
+# boto_client placeholder — passed to get_or_create_agent() but not used by Ollama/OpenAI path.
+# Only needed for Bedrock multimodal diagram fetching.
+boto_client = None
 
-    # Create session
-    session = get_session()
-
-    # Create client using the session
-    return session.create_client(
-        service_name="bedrock-runtime", region_name=REGION, config=config
-    )
-
-
-# AWS Client
-boto_client = create_bedrock_client()
-
-
-# Checkpointer
-checkpointer = AsyncBedrockSessionSaver()
-sync_checkpointer = BedrockSessionSaver()
-
-# Available Tools
+# Available Tools (populated during lifespan startup)
 ALL_AVAILABLE_TOOLS = []
 
-
-# Budget Level Configuration (uses REASONING_CONFIG from environment)
-BUDGET_MAPPING = (
-    REASONING_CONFIG if MODEL_PROVIDER == "bedrock" else {1: 16000, 2: 32000, 3: 63999}
-)
+BUDGET_MAPPING = {1: 16000, 2: 32000, 3: 63999}
 
 
-def create_model_config(budget_level: int = 1) -> dict:
-    """Create model configuration based on budget level and provider"""
-    if MODEL_PROVIDER == "openai":
-        return _create_openai_model_config(budget_level)
-    else:
-        return _create_bedrock_model_config(budget_level)
-
-
-def _create_bedrock_model_config(budget_level: int = 1) -> dict:
-    """Create Bedrock model configuration based on budget level"""
-    base_config = {
+def _create_ollama_model_config(budget_level: int = 1) -> dict:
+    """Create ChatOpenAI config pointing at Ollama's OpenAI-compatible API."""
+    return {
+        "model": LOCAL_MODEL,
         "max_tokens": MAX_TOKENS,
-        "model_id": MODEL_ID,
-        "client": boto_client,
-        "temperature": 0 if budget_level == 0 else 1,
+        "temperature": 0,
+        "api_key": INFERENCE_API_KEY,
+        "base_url": INFERENCE_BASE_URL,
+        # No use_responses_api — not supported by Ollama
     }
-
-    # If budget_level is 0, don't add thinking at all
-    if budget_level == 0:
-        return base_config
-
-    # Check if the model supports adaptive thinking
-    if MODEL_ID in ADAPTIVE_THINKING_MODELS:
-        effort = ADAPTIVE_EFFORT_MAP.get(budget_level, "low")
-        base_config["additional_model_request_fields"] = {
-            "thinking": {"type": "adaptive"},
-            "output_config": {"effort": effort},
-        }
-    else:
-        # For standard models, level 4 falls back to level 3 budget
-        budget_tokens = REASONING_CONFIG.get(
-            budget_level, REASONING_CONFIG.get(3, 8000)
-        )
-        base_config["additional_model_request_fields"] = {
-            "thinking": {
-                "type": "enabled",
-                "budget_tokens": budget_tokens,
-            },
-            "anthropic_beta": ["interleaved-thinking-2025-05-14"],
-        }
-
-    return base_config
 
 
 def _create_openai_model_config(budget_level: int = 1) -> dict:
-    """Create OpenAI model configuration based on budget level"""
+    """Create OpenAI model configuration based on budget level."""
     if not OPENAI_AVAILABLE:
         raise ImportError(
-            "OpenAI provider requires langchain-openai package. "
-            "Install with: pip install langchain-openai"
+            "OpenAI provider requires langchain-openai. Install with: pip install langchain-openai"
         )
-
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY environment variable not set")
 
     base_config = {
-        "model": MODEL_ID or "gpt-5-mini-2025-08-07",
+        "model": MODEL_ID or "gpt-4o",
         "max_tokens": MAX_TOKENS,
         "api_key": OPENAI_API_KEY,
         "temperature": 0,
@@ -150,7 +89,6 @@ def _create_openai_model_config(budget_level: int = 1) -> dict:
         "streaming": True,
     }
 
-    # Add reasoning effort if budget level > 0
     if budget_level > 0:
         reasoning_effort = REASONING_CONFIG.get(budget_level, "low")
         base_config["reasoning"] = {"effort": reasoning_effort, "summary": "detailed"}
@@ -158,11 +96,58 @@ def _create_openai_model_config(budget_level: int = 1) -> dict:
     return base_config
 
 
+def _create_bedrock_model_config(budget_level: int = 1) -> dict:
+    """Create Bedrock model configuration based on budget level."""
+    from botocore.config import Config
+    import boto3
+
+    bedrock_client = boto3.client(
+        "bedrock-runtime",
+        region_name=REGION,
+        config=Config(read_timeout=1000),
+    )
+
+    base_config = {
+        "max_tokens": MAX_TOKENS,
+        "model_id": MODEL_ID,
+        "client": bedrock_client,
+        "temperature": 0 if budget_level == 0 else 1,
+    }
+
+    if budget_level == 0:
+        return base_config
+
+    if MODEL_ID in ADAPTIVE_THINKING_MODELS:
+        effort = ADAPTIVE_EFFORT_MAP.get(budget_level, "low")
+        base_config["additional_model_request_fields"] = {
+            "thinking": {"type": "adaptive"},
+            "output_config": {"effort": effort},
+        }
+    else:
+        budget_tokens = REASONING_CONFIG.get(budget_level, REASONING_CONFIG.get(3, 8000))
+        base_config["additional_model_request_fields"] = {
+            "thinking": {"type": "enabled", "budget_tokens": budget_tokens},
+            "anthropic_beta": ["interleaved-thinking-2025-05-14"],
+        }
+
+    return base_config
+
+
+def create_model_config(budget_level: int = 1) -> dict:
+    """Create model configuration based on budget level and provider."""
+    if MODEL_PROVIDER == "ollama":
+        return _create_ollama_model_config(budget_level)
+    elif MODEL_PROVIDER == "openai":
+        return _create_openai_model_config(budget_level)
+    else:
+        return _create_bedrock_model_config(budget_level)
+
+
 def create_model(budget_level: int = 1) -> Any:
-    """Create model instance based on provider"""
+    """Create model instance based on provider."""
     config = create_model_config(budget_level)
 
-    if MODEL_PROVIDER == "openai":
+    if MODEL_PROVIDER in ("ollama", "openai"):
         return ChatOpenAI(**config)
     else:
         from langchain_aws import ChatBedrockConverse

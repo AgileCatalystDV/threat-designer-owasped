@@ -5,12 +5,6 @@ import string
 import json
 from langchain_core.messages import ToolMessage, HumanMessage, AIMessage
 from session_manager import session_manager
-import boto3
-import os
-
-
-REGION = os.environ.get("REGION", "us-east-1")
-bedrock_agent = boto3.client("bedrock-agent-runtime", region_name=REGION)
 
 
 async def get_history(agent, id):
@@ -197,38 +191,12 @@ def format_chat_for_frontend(backend_messages, interrupt=None):
     return chat_turns
 
 
-def delete_bedrock_session(session_header, session_id):
-    """Delete a Bedrock agent session."""
-    from botocore.exceptions import ClientError
-
+def delete_bedrock_session(session_header: str, session_id: str) -> bool:
+    """Delete a local session (no Bedrock AgentCore in local mode)."""
     try:
-        terminate_session = bedrock_agent.end_session(sessionIdentifier=session_id)
-        if terminate_session["sessionStatus"] in ["EXPIRED", "ENDED"]:
-            session_manager.delete_session(session_header)
-            bedrock_agent.delete_session(sessionIdentifier=session_id)
-            logger.debug(f"Successfully deleted session {session_id}")
-            return True
-        else:
-            logger.debug(
-                f"Unable to terminate session because is still active. Status: {terminate_session['sessionStatus']}"
-            )
-            return False
-    except ClientError as e:
-        error_code = e.response.get("Error", {}).get("Code", "")
-
-        # If session not found, it's already deleted - continue with cleanup
-        if error_code == "ResourceNotFoundException":
-            logger.debug(
-                f"Session {session_id} not found in AWS (already deleted), proceeding with local cleanup"
-            )
-            # Clean up local cache and DynamoDB mapping
-            session_manager.delete_session(session_header)
-            logger.debug(f"Completed cleanup for session {session_id}")
-            return True
-        else:
-            # Other AWS errors should be logged and raised
-            logger.error(f"AWS error deleting session {session_id}: {e}")
-            raise e
-    except Exception as e:
-        logger.error(f"Unexpected error deleting session {session_id}: {e}")
-        raise e
+        session_manager.delete_session(session_header)
+        logger.debug(f"[history_manager] Deleted local session {session_id}")
+        return True
+    except Exception as exc:
+        logger.error(f"[history_manager] Error deleting session {session_id}: {exc}")
+        return False

@@ -6,14 +6,15 @@ It handles authorization, agent invocation, status tracking, and data transforma
 """
 
 import json
+import logging
 import os
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-import boto3
-from aws_lambda_powertools import Logger, Tracer
+import httpx
 from botocore.exceptions import ClientError
 from pydantic import ValidationError
+from aws_clients import get_dynamodb_resource
 from exceptions.exceptions import (
     BadRequestError,
     InternalError,
@@ -26,14 +27,11 @@ from utils.authorization import require_access, require_owner
 STATE_TABLE = os.environ.get("JOB_STATUS_TABLE")
 AGENT_TABLE = os.environ.get("AGENT_STATE_TABLE")
 ATTACK_TREE_TABLE = os.environ.get("ATTACK_TREE_TABLE")
-AGENT_CORE_RUNTIME = os.environ.get("THREAT_MODELING_AGENT")
+THREAT_DESIGNER_URL = os.environ.get("THREAT_DESIGNER_URL", "http://threat-designer:8080")
 
-# AWS clients
-dynamodb = boto3.resource("dynamodb")
-agent_core_client = boto3.client("bedrock-agentcore")
+dynamodb = get_dynamodb_resource()
 
-LOG = Logger(serialize_stacktrace=False)
-tracer = Tracer()
+LOG = logging.getLogger(__name__)
 
 # Allowed node types for validation
 ALLOWED_NODE_TYPES = {"root", "and-gate", "or-gate", "leaf-attack"}
@@ -526,7 +524,7 @@ def convert_decimals(obj):
         return obj
 
 
-@tracer.capture_method
+
 def invoke_attack_tree_agent(
     owner: str,
     threat_model_id: str,
@@ -640,41 +638,29 @@ def invoke_attack_tree_agent(
             else:
                 raise InternalError(f"Failed to create status record: {error_msg}")
 
-        # Invoke Bedrock Agent Core runtime
+        # Invoke threat-designer agent via HTTP (local stack)
         try:
-            agent_core_client.invoke_agent_runtime(
-                agentRuntimeArn=AGENT_CORE_RUNTIME,
-                runtimeSessionId=session_id,
-                payload=json.dumps(
-                    {
-                        "input": {
-                            "id": attack_tree_id,  # Required by agent.py validation
-                            "attack_tree_id": attack_tree_id,
-                            "threat_model_id": threat_model_id,
-                            "threat_name": threat_name,
-                            "threat_description": threat_description,
-                            "owner": owner,
-                            "reasoning": reasoning,
-                            "type": "attack_tree",
-                        }
+            httpx.post(
+                f"{THREAT_DESIGNER_URL}/invocations",
+                json={
+                    "input": {
+                        "id": attack_tree_id,
+                        "attack_tree_id": attack_tree_id,
+                        "threat_model_id": threat_model_id,
+                        "threat_name": threat_name,
+                        "threat_description": threat_description,
+                        "owner": owner,
+                        "reasoning": reasoning,
+                        "type": "attack_tree",
                     }
-                ),
-            )
-            LOG.info(
-                f"Successfully invoked agent runtime",
-                extra={"attack_tree_id": attack_tree_id, "session_id": session_id},
-            )
-        except ClientError as e:
-            error_code = e.response["Error"]["Code"]
-            error_msg = e.response["Error"]["Message"]
-            LOG.error(
-                f"Bedrock Agent Core error: {error_code} - {error_msg}",
-                extra={
-                    "attack_tree_id": attack_tree_id,
-                    "error_code": error_code,
-                    "error_message": error_msg,
                 },
+                timeout=10.0,
             )
+            LOG.info("Attack tree agent invoked: %s session=%s", attack_tree_id, session_id)
+        except httpx.TimeoutException:
+            LOG.debug("Attack tree agent invocation accepted (timeout expected for async jobs)")
+        except httpx.RequestError as e:
+            LOG.error("Failed to reach threat-designer service: %s", str(e))
             # Update status to failed
             _update_status_to_failed(
                 attack_tree_id, f"Agent invocation failed: {error_msg}"
@@ -720,7 +706,7 @@ def invoke_attack_tree_agent(
         raise InternalError(f"Failed to invoke attack tree agent: {str(e)}")
 
 
-@tracer.capture_method
+
 def check_attack_tree_status(attack_tree_id: str, user_id: str) -> Dict[str, Any]:
     """
     Check the status of attack tree generation.
@@ -808,7 +794,7 @@ def check_attack_tree_status(attack_tree_id: str, user_id: str) -> Dict[str, Any
         raise InternalError(f"Failed to check status: {str(e)}")
 
 
-@tracer.capture_method
+
 def fetch_attack_tree(attack_tree_id: str, user_id: str) -> Dict[str, Any]:
     """
     Fetch a completed attack tree and transform to React Flow format.
@@ -957,7 +943,7 @@ def fetch_attack_tree(attack_tree_id: str, user_id: str) -> Dict[str, Any]:
         raise InternalError(f"Failed to fetch attack tree: {str(e)}")
 
 
-@tracer.capture_method
+
 def delete_attack_tree(attack_tree_id: str, owner: str) -> Dict[str, Any]:
     """
     Delete an attack tree.
@@ -1146,7 +1132,7 @@ def detect_circular_dependency(
         return True, f"Error checking for circular dependencies: {str(e)}"
 
 
-@tracer.capture_method
+
 def update_attack_tree(
     attack_tree_id: str, attack_tree_data: Dict[str, Any], user_id: str
 ) -> Dict[str, Any]:
@@ -1283,7 +1269,7 @@ def update_attack_tree(
         raise InternalError(f"Failed to update attack tree: {str(e)}")
 
 
-@tracer.capture_method
+
 def get_attack_tree_metadata(threat_model_id: str, user_id: str) -> Dict[str, Any]:
     """
     Get metadata about which threats have attack trees.
@@ -1372,7 +1358,7 @@ def get_attack_tree_metadata(threat_model_id: str, user_id: str) -> Dict[str, An
         raise InternalError(f"Failed to get attack tree metadata: {str(e)}")
 
 
-@tracer.capture_method
+
 def delete_attack_trees_for_threat_model(
     threat_model_id: str, owner: str
 ) -> Dict[str, Any]:

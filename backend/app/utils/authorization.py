@@ -5,14 +5,14 @@ This module provides decorators and functions for enforcing access control
 on threat model operations.
 """
 
+import logging
 from functools import wraps
 from typing import Any, Dict
 
-from aws_lambda_powertools import Logger
 from exceptions.exceptions import UnauthorizedError
 from services.collaboration_service import check_access
 
-LOG = Logger(serialize_stacktrace=False)
+LOG = logging.getLogger(__name__)
 
 
 def require_owner(threat_model_id: str, user_id: str) -> None:
@@ -128,25 +128,13 @@ def owner_only(func):
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        # Get the router instance from the function's module
-        # This assumes the function is defined in a module with a 'router' variable
-        import sys
-
-        module = sys.modules[func.__module__]
-        router = getattr(module, "router", None)
-
-        if not router:
-            raise RuntimeError("Router not found in function module")
-
+        import os
         # Extract threat model ID from kwargs or args
         threat_model_id = kwargs.get("id") or (args[0] if args else None)
         if not threat_model_id:
             raise ValueError("Threat model ID not found in function arguments")
 
-        # Get user ID from request context
-        user_id = router.current_event.request_context.authorizer.get("user_id")
-
-        # Check if user is owner
+        user_id = os.environ.get("LOCAL_USER", "local-user")
         require_owner(threat_model_id, user_id)
 
         # Call the original function
@@ -176,24 +164,12 @@ def access_required(required_level: str = "READ_ONLY"):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Get the router instance from the function's module
-            import sys
-
-            module = sys.modules[func.__module__]
-            router = getattr(module, "router", None)
-
-            if not router:
-                raise RuntimeError("Router not found in function module")
-
-            # Extract threat model ID from kwargs or args
+            import os
             threat_model_id = kwargs.get("id") or (args[0] if args else None)
             if not threat_model_id:
                 raise ValueError("Threat model ID not found in function arguments")
 
-            # Get user ID from request context
-            user_id = router.current_event.request_context.authorizer.get("user_id")
-
-            # Check access level
+            user_id = os.environ.get("LOCAL_USER", "local-user")
             access_info = require_access(threat_model_id, user_id, required_level)
 
             # Store access info in kwargs for use in the handler

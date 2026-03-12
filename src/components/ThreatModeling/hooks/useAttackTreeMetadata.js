@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import axios from "axios";
-import { fetchAuthSession } from "aws-amplify/auth";
 import { config } from "../../../config.js";
 
 /**
@@ -42,24 +41,9 @@ export function useAttackTreeMetadata(threatModelId) {
     setThreatsWithTrees(new Set()); // Clear state before fetching
 
     try {
-      // Get authentication headers
-      const session = await fetchAuthSession();
-      const idToken = session.tokens?.idToken?.toString();
-
-      if (!idToken) {
-        throw new Error("No authentication token available");
-      }
-
-      const headers = {
-        Authorization: `Bearer ${idToken}`,
-        "Content-Type": "application/json",
-      };
-
-      // Fetch metadata from backend
       const baseUrl = config.controlPlaneAPI;
       const response = await axios.get(
-        `${baseUrl}/threat-models/${threatModelId}/attack-trees/metadata`,
-        { headers }
+        `${baseUrl}/threat-models/${threatModelId}/attack-trees/metadata`
       );
 
       // Update state with threat names from response

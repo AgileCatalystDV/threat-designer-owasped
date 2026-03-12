@@ -1,5 +1,5 @@
+import os
 from contextlib import asynccontextmanager
-from functools import lru_cache
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,28 +14,13 @@ from utils import logger, load_mcp_config
 from config import ALL_AVAILABLE_TOOLS
 from tools import add_threats, edit_threats, delete_threats, get_attack_tree
 from tavily_tools import get_tavily_tools
-import jwt
+
+LOCAL_USER = os.environ.get("LOCAL_USER", "local-user")
 
 
-@lru_cache(maxsize=128)
-def decode_jwt_token(auth_header: str) -> str:
-    """
-    Decode JWT token and extract user sub claim.
-    Cached to avoid repeated decoding of the same token.
-    """
-    token = (
-        auth_header.replace("Bearer ", "")
-        if auth_header.startswith("Bearer ")
-        else auth_header
-    )
-
-    try:
-        # Skip signature validation as agent runtime has already validated the token
-        claims = jwt.decode(token, options={"verify_signature": False})
-        return claims.get("sub")
-    except jwt.InvalidTokenError as e:
-        logger.error(f"Invalid JWT token: {e}")
-        raise MissingHeader
+def get_user_id(http_request: Request) -> str:
+    """Return local user in no-auth mode; optionally decode real JWT if present."""
+    return LOCAL_USER
 
 
 @asynccontextmanager
@@ -106,33 +91,22 @@ async def handle_options():
 async def invoke(request: InvocationRequest, http_request: Request):
     """Process user input and return appropriate response type"""
 
-    # Early validation - fail fast before any processing
-    session_header = http_request.headers.get(
-        "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id"
+    # Accept either X-Session-Id (local) or legacy AgentCore header
+    session_header = (
+        http_request.headers.get("X-Session-Id")
+        or http_request.headers.get("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id")
     )
     if not session_header:
         raise MissingHeader
 
-    if not http_request.headers.get("Authorization"):
-        raise MissingHeader
-
     # Parse session header format: threat_model_id/session_seed
-    # Extract threat_model_id and discard the seed (seed is only for UI session management)
     if "/" in session_header:
-        threat_model_id, session_seed = session_header.rsplit("/", 1)
-        logger.debug(
-            f"Parsed session header - Threat Model ID: {threat_model_id}, Seed: {session_seed} (seed ignored)"
-        )
+        threat_model_id, _seed = session_header.rsplit("/", 1)
     else:
-        # Backward compatibility: if no seed, use the whole header as threat_model_id
         threat_model_id = session_header
-        logger.debug(
-            f"Legacy session header format - Threat Model ID: {threat_model_id}"
-        )
 
-    # Extract user sub from JWT token for multi-tenancy
-    auth_header = http_request.headers.get("Authorization")
-    user_sub = decode_jwt_token(auth_header)
+    # No-auth mode: use LOCAL_USER
+    user_sub = get_user_id(http_request)
 
     # Create composite session key: sub/threat_model_id
     # Note: We ignore the session seed - it's only used by the UI for session management

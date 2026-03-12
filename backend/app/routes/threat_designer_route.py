@@ -1,5 +1,10 @@
-from aws_lambda_powertools import Logger, Tracer
-from aws_lambda_powertools.event_handler.api_gateway import Router
+import json
+import logging
+import os
+from typing import Optional
+
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse
 from services.threat_designer_service import (
     check_status,
     check_trail,
@@ -29,485 +34,199 @@ from services.lock_service import (
     force_release_lock,
 )
 
-tracer = Tracer()
-router = Router()
+LOG = logging.getLogger(__name__)
+router = APIRouter()
 
-LOG = logger = Logger(serialize_stacktrace=False)
-
-
-@router.get("/threat-designer/mcp/status/<id>")
-@router.get("/threat-designer/status/<id>")
-def _tm_status(id):
-    path = router.current_event.path
-    if "/mcp" in path:
-        # MCP endpoints bypass authorization
-        return check_status(id)
-    else:
-        # Extract user_id from request context
-        user_id = router.current_event.request_context.authorizer.get("user_id")
-
-        # Verify user has at least READ_ONLY access
-        from utils.authorization import require_access
-
-        require_access(id, user_id, required_level="READ_ONLY")
-
-        # Return status if authorized
-        return check_status(id)
+# No-auth mode: all requests run as LOCAL_USER
+LOCAL_USER = os.environ.get("LOCAL_USER", "local-user")
 
 
-@router.get("/threat-designer/trail/<id>")
-def _tm_trail(id):
-    # Extract user_id from request context
-    user_id = router.current_event.request_context.authorizer.get("user_id")
+# ── Status / Trail ─────────────────────────────────────────────────────────
 
-    # Verify user has at least READ_ONLY access
-    from utils.authorization import require_access
+@router.get("/threat-designer/status/{id}")
+@router.get("/threat-designer/mcp/status/{id}")
+def _tm_status(id: str):
+    return check_status(id)
 
-    require_access(id, user_id, required_level="READ_ONLY")
 
-    # Return trail if authorized
+@router.get("/threat-designer/trail/{id}")
+def _tm_trail(id: str):
     return check_trail(id)
 
 
-@router.get("/threat-designer/mcp/<id>")
-@router.get("/threat-designer/<id>")
-def _tm_fetch_results(id):
-    path = router.current_event.path
-    if "/mcp" in path:
-        user_id = "MCP"
-    else:
-        user_id = router.current_event.request_context.authorizer.get("user_id")
+# ── Fetch single / all ─────────────────────────────────────────────────────
 
-    return fetch_results(id, user_id)
-
-
-@router.post("/threat-designer/mcp")
-@router.post("/threat-designer")
-def tm_start():
-    try:
-        body = router.current_event.json_body
-
-        path = router.current_event.path
-        if "/mcp" in path:
-            owner = "MCP"
-        else:
-            owner = router.current_event.request_context.authorizer.get("user_id")
-
-        return invoke_lambda(owner, body)
-    except Exception as e:
-        LOG.exception(e)
-
-
-@router.put("/threat-designer/mcp/restore/<id>")
-@router.put("/threat-designer/restore/<id>")
-def _restore(id):
-    path = router.current_event.path
-    if "/mcp" in path:
-        owner = "MCP"
-    else:
-        owner = router.current_event.request_context.authorizer.get("user_id")
-    return restore(id, owner)
-
-
-@router.get("/threat-designer/mcp/all")
 @router.get("/threat-designer/all")
-def _fetch_all():
-    try:
-        path = router.current_event.path
-        if "/mcp" in path:
-            owner = "MCP"
-        else:
-            owner = router.current_event.request_context.authorizer.get("user_id")
+@router.get("/threat-designer/mcp/all")
+def _fetch_all(
+    limit: int = Query(default=20),
+    cursor: Optional[str] = Query(default=None),
+    filter: str = Query(default="all"),
+):
+    allowed_page_sizes = [10, 20, 50, 100]
+    if limit not in allowed_page_sizes:
+        return JSONResponse(status_code=400, content={"error": "Page size must be 10, 20, 50, or 100"})
 
-        # Extract query parameters
-        query_params = router.current_event.query_string_parameters or {}
+    allowed_filters = ["owned", "shared", "all"]
+    if filter not in allowed_filters:
+        return JSONResponse(status_code=400, content={"error": "Filter must be 'owned', 'shared', or 'all'"})
 
-        # Get pagination parameters with defaults
-        limit_str = query_params.get("limit", "20")
-        cursor = query_params.get("cursor")
-        filter_mode = query_params.get("filter", "all")
+    result = fetch_all(LOCAL_USER, limit=limit, cursor=cursor, filter_mode=filter)
 
-        # Validate page size
-        try:
-            limit = int(limit_str)
-        except ValueError:
-            from aws_lambda_powertools.event_handler import Response
-            from aws_lambda_powertools.event_handler.api_gateway import content_types
-            import json
+    if isinstance(result, dict) and result.get("error"):
+        return JSONResponse(status_code=400, content=result)
 
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps({"error": "Page size must be a valid integer"}),
-            )
-
-        # Validate page size is one of the allowed values
-        allowed_page_sizes = [10, 20, 50, 100]
-        if limit not in allowed_page_sizes:
-            from aws_lambda_powertools.event_handler import Response
-            from aws_lambda_powertools.event_handler.api_gateway import content_types
-            import json
-
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps({"error": "Page size must be 10, 20, 50, or 100"}),
-            )
-
-        # Validate filter mode
-        allowed_filters = ["owned", "shared", "all"]
-        if filter_mode not in allowed_filters:
-            from aws_lambda_powertools.event_handler import Response
-            from aws_lambda_powertools.event_handler.api_gateway import content_types
-            import json
-
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps(
-                    {"error": "Filter must be 'owned', 'shared', or 'all'"}
-                ),
-            )
-
-        # Call service layer with pagination parameters
-        result = fetch_all(owner, limit=limit, cursor=cursor, filter_mode=filter_mode)
-
-        # Check if the service layer returned an error (e.g., invalid cursor)
-        if isinstance(result, dict) and result.get("error"):
-            from aws_lambda_powertools.event_handler import Response
-            from aws_lambda_powertools.event_handler.api_gateway import content_types
-            import json
-
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps(result),
-            )
-
-        return result
-
-    except Exception as e:
-        LOG.exception(e)
-        from aws_lambda_powertools.event_handler import Response
-        from aws_lambda_powertools.event_handler.api_gateway import content_types
-        import json
-
-        return Response(
-            status_code=500,
-            content_type=content_types.APPLICATION_JSON,
-            body=json.dumps({"error": "Failed to fetch threat models"}),
-        )
+    return result
 
 
-@router.put("/threat-designer/mcp/<id>")
-@router.put("/threat-designer/<id>")
-def _update_results(id):
-    body = router.current_event.json_body
-    path = router.current_event.path
-    if "/mcp" in path:
-        owner = "MCP"
-        lock_token = None
-    else:
-        owner = router.current_event.request_context.authorizer.get("user_id")
-        lock_token = body.get("lock_token")
-
-    return update_results(id, body, owner, lock_token)
+@router.get("/threat-designer/{id}")
+@router.get("/threat-designer/mcp/{id}")
+def _tm_fetch_results(id: str):
+    return fetch_results(id, LOCAL_USER)
 
 
-@router.delete("/threat-designer/mcp/<id>")
-@router.delete("/threat-designer/<id>")
-def _delete(id):
-    path = router.current_event.path
-    if "/mcp" in path:
-        owner = "MCP"
-        force_release = False
-    else:
-        owner = router.current_event.request_context.authorizer.get("user_id")
-        # Check query parameters for force_release flag
-        query_params = router.current_event.query_string_parameters or {}
-        force_release = query_params.get("force_release", "false").lower() == "true"
+# ── Create / Start ─────────────────────────────────────────────────────────
 
-    return delete_tm(id, owner, force_release)
+@router.post("/threat-designer")
+@router.post("/threat-designer/mcp")
+async def tm_start(request: Request):
+    body = await request.json()
+    return invoke_lambda(LOCAL_USER, body)
 
 
-@router.delete("/threat-designer/mcp/<id>/session/<session_id>")
-@router.delete("/threat-designer/<id>/session/<session_id>")
-def _delete_session(id, session_id):
-    path = router.current_event.path
-    if "/mcp" in path:
-        owner = "MCP"
-    else:
-        owner = router.current_event.request_context.authorizer.get("user_id")
-    return delete_session(id, session_id, owner)
+# ── Update / Restore ───────────────────────────────────────────────────────
+
+@router.put("/threat-designer/restore/{id}")
+@router.put("/threat-designer/mcp/restore/{id}")
+def _restore(id: str):
+    return restore(id, LOCAL_USER)
 
 
-@router.post("/threat-designer/mcp/upload")
+@router.put("/threat-designer/{id}")
+@router.put("/threat-designer/mcp/{id}")
+async def _update_results(id: str, request: Request):
+    body = await request.json()
+    lock_token = body.get("lock_token")
+    return update_results(id, body, LOCAL_USER, lock_token)
+
+
+# ── Delete ─────────────────────────────────────────────────────────────────
+
+@router.delete("/threat-designer/{id}/session/{session_id}")
+@router.delete("/threat-designer/mcp/{id}/session/{session_id}")
+def _delete_session(id: str, session_id: str):
+    return delete_session(id, session_id, LOCAL_USER)
+
+
+@router.delete("/threat-designer/{id}")
+@router.delete("/threat-designer/mcp/{id}")
+def _delete(id: str, force_release: bool = Query(default=False)):
+    return delete_tm(id, LOCAL_USER, force_release)
+
+
+# ── Upload / Download ──────────────────────────────────────────────────────
+
 @router.post("/threat-designer/upload")
-def _upload():
-    try:
-        body = router.current_event.json_body
-        file_type = body.get("file_type")
-        return generate_presigned_url(file_type)
-    except Exception as e:
-        LOG.exception(e)
+@router.post("/threat-designer/mcp/upload")
+async def _upload(request: Request):
+    body = await request.json()
+    file_type = body.get("file_type")
+    return generate_presigned_url(file_type)
 
 
 @router.post("/threat-designer/download")
-def _download():
-    try:
-        body = router.current_event.json_body
-        threat_model_id = body.get("threat_model_id")
-
-        # Extract user_id from request context
-        user_id = router.current_event.request_context.authorizer.get("user_id")
-
-        # Generate presigned URL with authorization check
-        return generate_presigned_download_url(threat_model_id, user_id)
-    except Exception as e:
-        LOG.exception(e)
-        raise
+async def _download(request: Request):
+    body = await request.json()
+    threat_model_id = body.get("threat_model_id")
+    return generate_presigned_download_url(threat_model_id, LOCAL_USER)
 
 
 @router.post("/threat-designer/download/batch")
-def _download_batch():
-    """
-    Generate presigned URLs for multiple threat models with authorization.
+async def _download_batch(request: Request):
+    body = await request.json()
 
-    Request Body:
-    {
-        "threat_model_ids": ["uuid1", "uuid2", ...]
-    }
+    if "threat_model_ids" not in body:
+        return JSONResponse(status_code=400, content={"error": "Missing required field: threat_model_ids"})
 
-    Response:
-    {
-        "results": [
-            {
-                "threat_model_id": "uuid1",
-                "presigned_url": "https://...",
-                "success": true
-            },
-            {
-                "threat_model_id": "uuid2",
-                "error": "Unauthorized",
-                "success": false
-            }
-        ]
-    }
-    """
-    try:
-        from aws_lambda_powertools.event_handler import Response
-        from aws_lambda_powertools.event_handler.api_gateway import content_types
-        import json
+    threat_model_ids = body.get("threat_model_ids")
 
-        # Extract user_id from request context
-        user_id = router.current_event.request_context.authorizer.get("user_id")
+    if not isinstance(threat_model_ids, list):
+        return JSONResponse(status_code=400, content={"error": "threat_model_ids must be an array"})
+    if len(threat_model_ids) == 0:
+        return JSONResponse(status_code=400, content={"error": "threat_model_ids array cannot be empty"})
+    if len(threat_model_ids) > 50:
+        return JSONResponse(status_code=400, content={"error": "Batch size cannot exceed 50 items"})
 
-        # Parse and validate request body
-        body = router.current_event.json_body
-
-        # Validate threat_model_ids field exists
-        if "threat_model_ids" not in body:
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps({"error": "Missing required field: threat_model_ids"}),
-            )
-
-        threat_model_ids = body.get("threat_model_ids")
-
-        # Validate threat_model_ids is a list
-        if not isinstance(threat_model_ids, list):
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps({"error": "threat_model_ids must be an array"}),
-            )
-
-        # Validate batch size (1-50 items)
-        if len(threat_model_ids) == 0:
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps({"error": "threat_model_ids array cannot be empty"}),
-            )
-
-        if len(threat_model_ids) > 50:
-            return Response(
-                status_code=400,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps({"error": "Batch size cannot exceed 50 items"}),
-            )
-
-        # Call service layer to generate presigned URLs
-        results = generate_presigned_download_urls_batch(threat_model_ids, user_id)
-
-        # Return formatted response
-        return {"results": results}
-
-    except Exception as e:
-        LOG.exception(e)
-        raise
+    results = generate_presigned_download_urls_batch(threat_model_ids, LOCAL_USER)
+    return {"results": results}
 
 
-# Collaboration endpoints
+# ── Collaboration ──────────────────────────────────────────────────────────
+
+@router.post("/threat-designer/{id}/share")
+async def _share_threat_model(id: str, request: Request):
+    body = await request.json()
+    collaborators = body.get("collaborators", [])
+    return share_threat_model(id, LOCAL_USER, collaborators)
 
 
-@router.post("/threat-designer/<id>/share")
-def _share_threat_model(id):
-    """Share a threat model with collaborators"""
-    try:
-        body = router.current_event.json_body
-        owner = router.current_event.request_context.authorizer.get("user_id")
-        collaborators = body.get("collaborators", [])
-
-        return share_threat_model(id, owner, collaborators)
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.get("/threat-designer/{id}/collaborators")
+def _get_collaborators(id: str):
+    return get_collaborators(id, LOCAL_USER)
 
 
-@router.get("/threat-designer/<id>/collaborators")
-def _get_collaborators(id):
-    """Get list of collaborators for a threat model"""
-    try:
-        requester = router.current_event.request_context.authorizer.get("user_id")
-        return get_collaborators(id, requester)
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.delete("/threat-designer/{id}/collaborators/{collab_user_id}")
+def _remove_collaborator(id: str, collab_user_id: str):
+    return remove_collaborator(id, LOCAL_USER, collab_user_id)
 
 
-@router.delete("/threat-designer/<id>/collaborators/<user_id>")
-def _remove_collaborator(id, user_id):
-    """Remove a collaborator from a threat model"""
-    try:
-        owner = router.current_event.request_context.authorizer.get("user_id")
-        return remove_collaborator(id, owner, user_id)
-    except Exception as e:
-        LOG.exception(e)
-        raise
-
-
-@router.put("/threat-designer/<id>/collaborators/<user_id>")
-def _update_collaborator_access(id, user_id):
-    """Update a collaborator's access level"""
-    try:
-        body = router.current_event.json_body
-        owner = router.current_event.request_context.authorizer.get("user_id")
-        new_access_level = body.get("access_level")
-
-        return update_collaborator_access(id, owner, user_id, new_access_level)
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.put("/threat-designer/{id}/collaborators/{collab_user_id}")
+async def _update_collaborator_access(id: str, collab_user_id: str, request: Request):
+    body = await request.json()
+    new_access_level = body.get("access_level")
+    return update_collaborator_access(id, LOCAL_USER, collab_user_id, new_access_level)
 
 
 @router.get("/threat-designer/users")
-def _list_users():
-    """List available Cognito users for sharing with optional search"""
-    try:
-        # Get current user
-        current_user = router.current_event.request_context.authorizer.get("user_id")
-
-        # Get query parameters
-        query_params = router.current_event.query_string_parameters or {}
-        search = query_params.get("search")
-        limit = int(query_params.get("limit", "100"))
-
-        return list_cognito_users(
-            search_filter=search, max_results=limit, exclude_user=current_user
-        )
-    except Exception as e:
-        LOG.exception(e)
-        raise
+def _list_users(
+    search: Optional[str] = Query(default=None),
+    limit: int = Query(default=100),
+):
+    return list_cognito_users(search_filter=search, max_results=limit, exclude_user=LOCAL_USER)
 
 
-# Lock management endpoints
+# ── Lock management ────────────────────────────────────────────────────────
+
+@router.post("/threat-designer/{id}/lock")
+def _acquire_lock(id: str):
+    result = acquire_lock(id, LOCAL_USER)
+    if not result.get("success"):
+        return JSONResponse(status_code=409, content=result)
+    return result
 
 
-@router.post("/threat-designer/<id>/lock")
-def _acquire_lock(id):
-    """Acquire an edit lock on a threat model"""
-    try:
-        user_id = router.current_event.request_context.authorizer.get("user_id")
-        result = acquire_lock(id, user_id)
-
-        # Return 409 Conflict if lock is held by another user
-        if not result.get("success"):
-            from aws_lambda_powertools.event_handler import Response
-            from aws_lambda_powertools.event_handler.api_gateway import content_types
-            import json
-
-            return Response(
-                status_code=409,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps(result),
-            )
-
-        return result
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.put("/threat-designer/{id}/lock/heartbeat")
+async def _refresh_lock(id: str, request: Request):
+    body = await request.json()
+    lock_token = body.get("lock_token")
+    result = refresh_lock(id, LOCAL_USER, lock_token)
+    if not result.get("success") and result.get("status_code") == 410:
+        return JSONResponse(status_code=410, content=result)
+    return result
 
 
-@router.put("/threat-designer/<id>/lock/heartbeat")
-def _refresh_lock(id):
-    """Refresh lock timestamp (heartbeat)"""
-    try:
-        body = router.current_event.json_body
-        user_id = router.current_event.request_context.authorizer.get("user_id")
-        lock_token = body.get("lock_token")
-
-        result = refresh_lock(id, user_id, lock_token)
-
-        # Return 410 Gone if lock is lost
-        if not result.get("success") and result.get("status_code") == 410:
-            from aws_lambda_powertools.event_handler import Response
-            from aws_lambda_powertools.event_handler.api_gateway import content_types
-            import json
-
-            return Response(
-                status_code=410,
-                content_type=content_types.APPLICATION_JSON,
-                body=json.dumps(result),
-            )
-
-        return result
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.delete("/threat-designer/{id}/lock")
+async def _release_lock(id: str, request: Request):
+    body = await request.json()
+    lock_token = body.get("lock_token")
+    return release_lock(id, LOCAL_USER, lock_token)
 
 
-@router.delete("/threat-designer/<id>/lock")
-def _release_lock(id):
-    """Release an edit lock gracefully"""
-    try:
-        body = router.current_event.json_body
-        user_id = router.current_event.request_context.authorizer.get("user_id")
-        lock_token = body.get("lock_token")
-
-        return release_lock(id, user_id, lock_token)
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.get("/threat-designer/{id}/lock/status")
+def _get_lock_status(id: str):
+    return get_lock_status(id)
 
 
-@router.get("/threat-designer/<id>/lock/status")
-def _get_lock_status(id):
-    """Get current lock status for a threat model"""
-    try:
-        return get_lock_status(id)
-    except Exception as e:
-        LOG.exception(e)
-        raise
-
-
-@router.delete("/threat-designer/<id>/lock/force")
-def _force_release_lock(id):
-    """Force release a lock (owner only)"""
-    try:
-        owner = router.current_event.request_context.authorizer.get("user_id")
-        return force_release_lock(id, owner)
-    except Exception as e:
-        LOG.exception(e)
-        raise
+@router.delete("/threat-designer/{id}/lock/force")
+def _force_release_lock(id: str):
+    return force_release_lock(id, LOCAL_USER)

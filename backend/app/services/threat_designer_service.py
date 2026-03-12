@@ -4,13 +4,13 @@ import datetime
 import decimal
 import hashlib
 import json
+import logging
 import os
 import time
 import uuid
-import boto3
-from aws_lambda_powertools import Logger, Tracer
-from botocore.config import Config
+import httpx
 from botocore.exceptions import ClientError
+from aws_clients import get_dynamodb_resource, get_s3_client, get_s3_presign_client
 from exceptions.exceptions import (
     InternalError,
     NotFoundError,
@@ -20,27 +20,17 @@ from exceptions.exceptions import (
 from utils.utils import create_dynamodb_item
 
 STATE = os.environ.get("JOB_STATUS_TABLE")
-FUNCTION = os.environ.get("THREAT_MODELING_LAMBDA")
-AGENT_CORE_RUNTIME = os.environ.get("THREAT_MODELING_AGENT")
 AGENT_TABLE = os.environ.get("AGENT_STATE_TABLE")
 AGENT_TRAIL_TABLE = os.environ.get("AGENT_TRAIL_TABLE")
 SHARING_TABLE = os.environ.get("SHARING_TABLE")
 ARCHITECTURE_BUCKET = os.environ.get("ARCHITECTURE_BUCKET")
-REGION = os.environ.get("REGION")
-dynamodb = boto3.resource("dynamodb")
-lambda_client = boto3.client("lambda")
-s3_client = boto3.client("s3")
-agent_core_client = boto3.client("bedrock-agentcore")
+THREAT_DESIGNER_URL = os.environ.get("THREAT_DESIGNER_URL", "http://threat-designer:8080")
 
+dynamodb = get_dynamodb_resource()
+s3_client = get_s3_client()
+s3_pre = get_s3_presign_client()
 
-s3_pre = boto3.client(
-    "s3",
-    region_name=REGION,
-    endpoint_url=f"https://s3.{REGION}.amazonaws.com",
-    config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
-)
-LOG = Logger(serialize_stacktrace=False)
-tracer = Tracer()
+LOG = logging.getLogger(__name__)
 
 table = dynamodb.Table(STATE)
 trail_table = dynamodb.Table(AGENT_TRAIL_TABLE)
@@ -244,7 +234,7 @@ def delete_dynamodb_item(table, key, owner):
         raise
 
 
-@tracer.capture_method
+
 def invoke_lambda(owner, payload):
     s3_location = payload.get("s3_location")
     iteration = payload.get("iteration")
@@ -304,29 +294,36 @@ def invoke_lambda(owner, payload):
             else:
                 LOG.warning(f"Item not found for backup during replay: {id}")
 
-        # Step 3: Invoke the agent
-        agent_core_client.invoke_agent_runtime(
-            agentRuntimeArn=AGENT_CORE_RUNTIME,
-            runtimeSessionId=session_id,
-            payload=json.dumps(
-                {
-                    "input": {
-                        "s3_location": s3_location,
-                        "id": id,
-                        "reasoning": reasoning,
-                        "iteration": iteration,
-                        "description": description,
-                        "assumptions": assumptions,
-                        "owner": owner,
-                        "title": title,
-                        "replay": is_replay,
-                        "instructions": instructions,
-                        "image_type": image_type,
-                        "application_type": application_type,
-                    }
-                }
-            ),
-        )
+        # Step 3: Invoke the threat-designer agent via HTTP (local stack)
+        invocation_payload = {
+            "input": {
+                "s3_location": s3_location,
+                "id": id,
+                "reasoning": reasoning,
+                "iteration": iteration,
+                "description": description,
+                "assumptions": assumptions,
+                "owner": owner,
+                "title": title,
+                "replay": is_replay,
+                "instructions": instructions,
+                "image_type": image_type,
+                "application_type": application_type,
+            }
+        }
+        try:
+            httpx.post(
+                f"{THREAT_DESIGNER_URL}/invocations",
+                json=invocation_payload,
+                timeout=10.0,
+            )
+        except httpx.TimeoutException:
+            # Agent accepted the job but response timed out — this is expected
+            # for long-running analysis jobs (fire-and-forget pattern)
+            LOG.debug("Threat designer invocation accepted (response timeout is expected)")
+        except httpx.RequestError as e:
+            LOG.error("Failed to reach threat-designer service: %s", str(e))
+            raise InternalError(f"Could not connect to threat-designer service: {e}")
 
         agent_state = {
             "job_id": id,
@@ -363,7 +360,7 @@ def invoke_lambda(owner, payload):
         raise InternalError(e)
 
 
-@tracer.capture_method
+
 def check_status(job_id):
     try:
         # Attempt to get the item from the DynamoDB table
@@ -402,7 +399,7 @@ def check_status(job_id):
         raise InternalError(e)
 
 
-@tracer.capture_method
+
 def check_trail(job_id):
     try:
         # Attempt to get the item from the DynamoDB table
@@ -430,7 +427,7 @@ def check_trail(job_id):
         raise InternalError(e)
 
 
-@tracer.capture_method
+
 def fetch_results(job_id, user_id=None):
     table = dynamodb.Table(AGENT_TABLE)
 
@@ -481,7 +478,7 @@ def fetch_results(job_id, user_id=None):
         raise InternalError(e)
 
 
-@tracer.capture_method
+
 def update_results(job_id, payload, owner, lock_token=None):
     table = dynamodb.Table(AGENT_TABLE)
 
@@ -575,7 +572,7 @@ def update_results(job_id, payload, owner, lock_token=None):
         raise
 
 
-@tracer.capture_method
+
 def restore(job_id, owner):
     agent_table = dynamodb.Table(AGENT_TABLE)
     state_table = dynamodb.Table(STATE)
@@ -812,7 +809,7 @@ def query_shared_paginated(
         raise InternalError(e)
 
 
-@tracer.capture_method
+
 def fetch_all(owner, limit=20, cursor=None, filter_mode="all"):
     """
     Fetch paginated threat models for a user.
@@ -916,7 +913,7 @@ def fetch_all(owner, limit=20, cursor=None, filter_mode="all"):
         raise
 
 
-@tracer.capture_method
+
 def delete_tm(job_id, owner, force_release=False):
     table = dynamodb.Table(AGENT_TABLE)
     sharing_table = dynamodb.Table(os.environ.get("SHARING_TABLE"))
@@ -1026,7 +1023,7 @@ def delete_tm(job_id, owner, force_release=False):
         raise
 
 
-@tracer.capture_method
+
 def delete_session(job_id, session_id, owner, override_execution_owner=False):
     agent_table = dynamodb.Table(AGENT_TABLE)
     state_table = dynamodb.Table(STATE)
@@ -1071,18 +1068,8 @@ def delete_session(job_id, session_id, owner, override_execution_owner=False):
                     "You do not have permission to stop this threat modeling session. Only the user who started the execution can stop it."
                 )
 
-        try:
-            response = agent_core_client.stop_runtime_session(
-                runtimeSessionId=session_id, agentRuntimeArn=AGENT_CORE_RUNTIME
-            )
-            LOG.info(
-                f"Session {session_id} stopped successfully with response code: {response['statusCode']}"
-            )
-        except ClientError as e:
-            if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                LOG.warning(f"Session {session_id} not found, proceeding with cleanup")
-            else:
-                raise
+        # Local stack: no AgentCore runtime to stop; state cleanup handled below
+        LOG.info("Session %s marked for cleanup (local mode)", session_id)
 
         key = {"job_id": job_id}
         item = fetch_results(job_id).get("item")
@@ -1105,7 +1092,7 @@ def delete_session(job_id, session_id, owner, override_execution_owner=False):
         raise
 
 
-@tracer.capture_method
+
 def generate_presigned_url(file_type="image/png", expiration=300):
     key = str(uuid.uuid4())
     try:
@@ -1167,7 +1154,7 @@ def extract_threat_model_id_from_s3_location(s3_location: str) -> str:
     return threat_model_id
 
 
-@tracer.capture_method
+
 def generate_presigned_download_url(threat_model_id, user_id=None, expiration=300):
     """
     Generate a presigned URL for downloading a threat model's architecture diagram from S3.

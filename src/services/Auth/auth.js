@@ -1,37 +1,14 @@
-import { signInWithRedirect } from "@aws-amplify/auth/cognito";
-import { getCurrentUser, fetchAuthSession, signOut } from "@aws-amplify/auth";
-
-export const signIn = () => {
-  return signInWithRedirect({ provider: "Cognito" });
+const LOCAL_USER = {
+  username: "local-user",
+  userId: "local-user",
+  given_name: "Local",
+  family_name: "User",
 };
 
-export const logOut = () => {
-  return signOut().then(() => {
-    return null;
-  });
-};
+export const signIn = async () => LOCAL_USER;
 
-export const getUser = async () => {
-  try {
-    const user = await getCurrentUser();
-    const session = await fetchAuthSession();
+export const logOut = async () => null;
 
-    if (session.tokens) {
-      const payload = session.tokens.idToken.payload;
-      return {
-        ...user,
-        given_name: payload.given_name,
-        family_name: payload.family_name,
-      };
-    }
+export const getUser = async () => LOCAL_USER;
 
-    return user;
-  } catch (error) {
-    console.error("Error fetching user:", error);
-    return null;
-  }
-};
-
-export const getSession = () => {
-  return fetchAuthSession();
-};
+export const getSession = async () => ({ tokens: null });

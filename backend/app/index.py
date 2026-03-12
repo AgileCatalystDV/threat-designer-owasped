@@ -1,134 +1,84 @@
-import copy
 import json
+import logging
 import os
 from typing import Any, Dict
 
-from aws_lambda_powertools import Logger, Tracer
-from aws_lambda_powertools.event_handler import (
-    APIGatewayRestResolver,
-    CORSConfig,
-    Response,
-    content_types,
-)
-from aws_lambda_powertools.logging import correlation_paths
-from aws_lambda_powertools.utilities.typing import LambdaContext
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from exceptions.exceptions import BadRequestError, InternalError, ViewError
 from routes import threat_designer_route, attack_tree_route
 from utils.utils import custom_serializer, mask_sensitive_attributes
 
-PORTAL_REDIRECT_URL = os.getenv(key="PORTAL_REDIRECT_URL")
-TRUSTED_ORIGINS = os.getenv(key="TRUSTED_ORIGINS")
+PORTAL_REDIRECT_URL = os.getenv("PORTAL_REDIRECT_URL", "http://localhost:3000")
+TRUSTED_ORIGINS_RAW = os.getenv("TRUSTED_ORIGINS", "http://localhost:3000")
+trusted_origins = [o.strip() for o in TRUSTED_ORIGINS_RAW.split(",")]
 
+logger = logging.getLogger(__name__)
 
-logger = Logger(serialize_stacktrace=False)
-tracer = Tracer()
+app = FastAPI(title="Threat Designer API")
 
-
-# Using default CORS configs
-cors_config = CORSConfig(
-    max_age=100,
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=trusted_origins,
     allow_credentials=True,
-    allow_origin=os.environ["PORTAL_REDIRECT_URL"],
-    allow_headers=["Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-trusted_origins = os.environ["TRUSTED_ORIGINS"].split(",")
-
-app = APIGatewayRestResolver(serializer=custom_serializer, cors=cors_config)
 app.include_router(threat_designer_route.router)
 app.include_router(attack_tree_route.router)
 
 
-@app.route(method="OPTIONS", rule=".*")
-# Matches any pre-flight request coming from API Gateway
-def preflight_handler():
-    """Handles multi-origin preflight requests"""
-    origin = app.current_event.get_header_value(name="Origin", default_value="")
-    if origin in trusted_origins:
-        app._cors.allow_origin = origin
-        app._cors.allow_credentials = True
-
-
-def add_security_headers(response: Dict[str, Any]):
-    headers = response.get("multiValueHeaders")
-    headers["Strict-Transport-Security"] = ["max-age=63072000;"]
-    headers["Content-Security-Policy"] = ["default-src 'self'"]
-    headers["X-Content-Type-Options"] = ["nosniff"]
-    headers["X-Frame-Options"] = ["DENY"]
-    origin = app.current_event.get_header_value(name="Origin", default_value="")
-    headers["Access-Control-Allow-Origin"] = [origin]
-    if origin in trusted_origins:
-        headers["Access-Control-Allow-Origin"] = [origin]
-        headers["Access-Control-Allow-Credentials"] = ["true"]
-    if app.current_event.http_method == "OPTIONS":
-        headers["Access-Control-Allow-Methods"] = [
-            "GET",
-            "POST",
-            "PUT",
-            "DELETE",
-            "OPTIONS",
-        ]
-        headers["Access-Control-Allow-Headers"] = ["Content-Type", "authorization"]
-        headers["Access-Control-Allow-Credentials"] = ["true"]
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=63072000;"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
     return response
 
 
-def log_event(event: dict):
-    """Makes a copy of incoming event, removes sensitive headers and logs the event."""
-    event_copy = copy.deepcopy(event)
-    # Remove attributes which might potentially contain sensitive info
-    if "headers" in event_copy:
-        event_copy.pop("headers")
-    if "multiValueHeaders" in event_copy:
-        event_copy.pop("multiValueHeaders")
-    if "requestContext" in event_copy:
-        event_copy.pop("requestContext")
-    if "body" in event_copy and event_copy["body"]:
-        body = json.loads(event_copy["body"])
-        if body:
-            mask_sensitive_attributes(body)
-            event_copy["body"] = body
-
-
-@logger.inject_lambda_context(correlation_id_path=correlation_paths.API_GATEWAY_REST)
-@tracer.capture_lambda_handler
-def lambda_handler(event: dict, context: LambdaContext) -> dict:
-    log_event(event)
-    return add_security_headers(app.resolve(event, context))
-
-
-@app.exception_handler(Exception)
-def handle_service_errors(ex: Exception):  # global catch all
-    logger.error("Internal Server Error")
-    error_dict = {"code": type(ex).__name__, "message": str(ex)}
-    return build_error_response(error_dict, 500)
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    sensitive_headers = {"authorization", "cookie"}
+    safe_headers = {k: v for k, v in request.headers.items() if k.lower() not in sensitive_headers}
+    logger.debug("Incoming request: %s %s headers=%s", request.method, request.url.path, safe_headers)
+    return await call_next(request)
 
 
 @app.exception_handler(InternalError)
-def handle_internal_errors(ex: InternalError):  # receives exception raised
-    logger.error("Internal Server Error")
-    error_dict = {"code": type(ex).__name__, "message": str(ex)}
-    return build_error_response(error_dict, 500)
+async def handle_internal_errors(request: Request, ex: InternalError):
+    logger.error("Internal Server Error: %s", str(ex))
+    return JSONResponse(status_code=500, content={"code": type(ex).__name__, "message": str(ex)})
 
 
 @app.exception_handler(ViewError)
-def handle_view_errors(ex: ViewError):  # receives exception raised
-    logger.warning("Application Errors")
-    return build_error_response(ex.to_dict(), ex.STATUS)
+async def handle_view_errors(request: Request, ex: ViewError):
+    logger.warning("Application Error: %s", str(ex))
+    return JSONResponse(status_code=ex.STATUS, content=ex.to_dict())
 
 
 @app.exception_handler(BadRequestError)
-def handle_bad_request_errors(ex: BadRequestError):  # receives exception raised
-    logger.warning("Bad Request Error")
-    # BadRequestError uses 'message' attribute, not 'msg'
+async def handle_bad_request_errors(request: Request, ex: BadRequestError):
+    logger.warning("Bad Request Error: %s", str(ex))
     error_message = getattr(ex, "message", str(ex))
-    error_dict = {"code": type(ex).__name__, "message": error_message}
-    return build_error_response(error_dict, 400)
+    return JSONResponse(status_code=400, content={"code": type(ex).__name__, "message": error_message})
 
 
-def build_error_response(msg: Dict[str, str], status: int):
-    return Response(
-        status_code=status,
-        content_type=content_types.APPLICATION_JSON,
-        body=json.dumps(msg),
-    )
+@app.exception_handler(Exception)
+async def handle_service_errors(request: Request, ex: Exception):
+    logger.error("Unhandled exception: %s", str(ex), exc_info=True)
+    return JSONResponse(status_code=500, content={"code": type(ex).__name__, "message": str(ex)})
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("index:app", host="0.0.0.0", port=port, reload=False)

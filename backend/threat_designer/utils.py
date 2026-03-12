@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, ParamSpec, TypeVar, Unio
 import boto3
 import structlog
 from botocore.exceptions import ClientError
+from aws_clients import get_dynamodb_resource, get_s3_client
 from constants import (
     AWS_SERVICE_DYNAMODB,
     AWS_SERVICE_S3,
@@ -137,7 +138,7 @@ def update_job_state(
 
     with operation_context("update_job_state", context_id):
         try:
-            dynamodb = boto3.resource(AWS_SERVICE_DYNAMODB, region_name=REGION)
+            dynamodb = get_dynamodb_resource()
             table = dynamodb.Table(JOB_STATUS_TABLE)
 
             # Check if session was cancelled - skip update and reset flag if so
@@ -278,7 +279,7 @@ def update_trail(
         )
 
         try:
-            dynamodb = boto3.resource(AWS_SERVICE_DYNAMODB, region_name=REGION)
+            dynamodb = get_dynamodb_resource()
             table = dynamodb.Table(TRAIL_TABLE)
 
             # Build update expression
@@ -425,7 +426,7 @@ def create_dynamodb_item(
 
             logger.debug("Creating DynamoDB item", job_id=job_id, table=table_name)
 
-            dynamodb = boto3.resource(AWS_SERVICE_DYNAMODB, region_name=REGION)
+            dynamodb = get_dynamodb_resource()
             table = dynamodb.Table(table_name)
 
             current_utc = datetime.now(timezone.utc).isoformat()
@@ -515,7 +516,7 @@ def update_item_with_backup(
                 "Creating backup for DynamoDB item", job_id=job_id, table=table_name
             )
 
-            dynamodb = boto3.resource(AWS_SERVICE_DYNAMODB, region_name=REGION)
+            dynamodb = get_dynamodb_resource()
             table = dynamodb.Table(table_name)
 
             response = table.get_item(Key={DB_FIELD_JOB_ID: job_id})
@@ -587,7 +588,7 @@ def fetch_results(job_id: str, table_name: str) -> Dict[str, Any]:
     try:
         logger.debug("Fetching job results", job_id=job_id, table=table_name)
 
-        dynamodb = boto3.resource(AWS_SERVICE_DYNAMODB, region_name=REGION)
+        dynamodb = get_dynamodb_resource()
         table = dynamodb.Table(table_name)
 
         response = table.get_item(Key={DB_FIELD_JOB_ID: job_id})
@@ -650,7 +651,7 @@ def parse_s3_image_to_base64(bucket_name: str, object_key: str) -> Optional[str]
             "Converting S3 image to base64", bucket=bucket_name, key=object_key
         )
 
-        s3_client = boto3.client(AWS_SERVICE_S3, region_name=REGION)
+        s3_client = get_s3_client()
 
         response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
         image_content = response["Body"].read()

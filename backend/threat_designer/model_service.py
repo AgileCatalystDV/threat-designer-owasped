@@ -1,8 +1,9 @@
 """Model service layer for centralized model interactions."""
 
+import os
 from typing import Any, Dict, List, Optional, Type
 
-from constants import ERROR_MODEL_INIT_FAILED
+from constants import ENV_MODEL_PROVIDER, ERROR_MODEL_INIT_FAILED, MODEL_PROVIDER_OLLAMA
 from exceptions import (
     ModelInvocationError,
     OpenAIAuthenticationError,
@@ -43,7 +44,15 @@ class ModelService:
 
     def _get_tool_choice(self, model: Any, tools: List[Type], reasoning: bool) -> Any:
         """Get appropriate tool_choice based on provider and reasoning mode."""
-        # Check if this is an OpenAI model
+        provider = os.environ.get(ENV_MODEL_PROVIDER, "bedrock")
+
+        if provider == MODEL_PROVIDER_OLLAMA:
+            # Ollama's OpenAI compat layer supports basic tool calling but not
+            # forced function selection — use "auto" to let the model decide.
+            logger.debug("Using Ollama tool choice (auto)")
+            return "auto"
+
+        # Check if this is an OpenAI model (but not Ollama)
         is_openai = hasattr(model, "__class__") and "OpenAI" in model.__class__.__name__
 
         if is_openai:

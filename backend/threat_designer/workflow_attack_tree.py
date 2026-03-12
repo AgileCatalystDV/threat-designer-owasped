@@ -234,11 +234,11 @@ def agent_node(state: AttackTreeState, config: RunnableConfig) -> Command:
                 threat_name = state.get("threat_name", "")
 
                 if threat_model_id:
-                    import boto3
                     import os
                     from utils import parse_s3_image_to_base64
+                    from aws_clients import get_dynamodb_resource
 
-                    dynamodb = boto3.resource("dynamodb")
+                    dynamodb = get_dynamodb_resource()
                     agent_state_table_name = os.environ.get("AGENT_STATE_TABLE")
                     architecture_bucket = os.environ.get("ARCHITECTURE_BUCKET")
 
@@ -806,16 +806,16 @@ def continue_or_finish(state: AttackTreeState) -> Command:
         # Store the attack tree in DynamoDB
         try:
             from attack_tree_models import AttackTreeConverter
-            import boto3
             from datetime import datetime
             import os
+            from aws_clients import get_dynamodb_resource
 
             # Convert logical structure to React Flow format
             converter = AttackTreeConverter()
             react_flow_data = converter.convert(attack_tree)
 
             # Save to attack-tree-data table
-            dynamodb = boto3.resource("dynamodb")
+            dynamodb = get_dynamodb_resource()
             attack_tree_table_name = os.environ.get("ATTACK_TREE_TABLE")
 
             if not attack_tree_table_name:

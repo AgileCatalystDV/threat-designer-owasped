@@ -1,5 +1,4 @@
 import axios from "axios";
-import { fetchAuthSession } from "aws-amplify/auth";
 import { config } from "../../config.js";
 
 const baseUrl = config.controlPlaneAPI + "/threat-designer";
@@ -22,20 +21,8 @@ class LockService {
     this.pollIntervalMs = 30000;
   }
 
-  /**
-   * Get authorization headers with JWT token
-   */
   async getAuthHeaders() {
-    try {
-      const session = await fetchAuthSession();
-      const token = session.tokens.idToken.toString();
-      return {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      };
-    } catch (error) {
-      throw new Error("Failed to get authentication token");
-    }
+    return { "Content-Type": "application/json" };
   }
 
   /**

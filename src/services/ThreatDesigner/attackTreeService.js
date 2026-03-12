@@ -20,7 +20,6 @@
  */
 
 import axios from "axios";
-import { fetchAuthSession } from "aws-amplify/auth";
 import { config } from "../../config.js";
 
 const baseUrl = config.controlPlaneAPI + "/attack-tree";
@@ -63,27 +62,9 @@ export const generateAttackTreeId = (threatModelId, threatName) => {
   return compositeKey;
 };
 
-/**
- * Get authentication headers for API requests
- */
-const getAuthHeaders = async () => {
-  try {
-    const session = await fetchAuthSession();
-    const idToken = session.tokens?.idToken?.toString();
-
-    if (!idToken) {
-      throw new Error("No authentication token available");
-    }
-
-    return {
-      Authorization: `Bearer ${idToken}`,
-      "Content-Type": "application/json",
-    };
-  } catch (error) {
-    console.error("Error getting auth headers:", error);
-    throw error;
-  }
-};
+const getAuthHeaders = async () => ({
+  "Content-Type": "application/json",
+});
 
 /**
  * Trigger attack tree generation for a threat

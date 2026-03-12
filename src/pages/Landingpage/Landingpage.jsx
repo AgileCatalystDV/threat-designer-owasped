@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import styled from "@emotion/styled";
-import { amplifyConfig } from "../../config";
-import { getCurrentUser } from "aws-amplify/auth";
-import { Amplify } from "aws-amplify";
+import { getUser } from "../../services/Auth/auth";
 import LoginForm from "../../components/Auth/LoginForm";
 import { useNavigate } from "react-router";
 import { useTheme } from "../../components/ThemeContext";
@@ -11,8 +9,6 @@ import icon2 from "../../components/Auth/login-icons/flow.svg";
 import icon3 from "../../components/Auth/login-icons/threat.svg";
 import icon4 from "../../components/Auth/login-icons/ai.svg";
 import icon5 from "../../components/Auth/login-icons/sentry.svg";
-
-Amplify.configure(amplifyConfig);
 
 // Main background container (uses theme background)
 const LoginPageContainer = styled.div`
@@ -201,7 +197,7 @@ const LoginPageInternal = ({ setAuthUser }) => {
 
   const checkAuthStatus = async () => {
     try {
-      const user = await getCurrentUser();
+      const user = await getUser();
       setIsAuthenticated(!!user);
       setAuthUser();
     } catch (error) {

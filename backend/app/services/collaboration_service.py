@@ -1,9 +1,9 @@
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-import boto3
-from aws_lambda_powertools import Logger, Tracer
+from aws_clients import get_dynamodb_resource, get_s3_client
 from exceptions.exceptions import InternalError, NotFoundError, UnauthorizedError
 
 # Environment variables
@@ -12,15 +12,11 @@ AGENT_TABLE = os.environ.get("AGENT_STATE_TABLE")
 SHARING_TABLE = os.environ.get("SHARING_TABLE")
 LOCKS_TABLE = os.environ.get("LOCKS_TABLE")
 ARCHITECTURE_BUCKET = os.environ.get("ARCHITECTURE_BUCKET")
-USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID")
 
-# AWS clients
-dynamodb = boto3.resource("dynamodb")
-s3_client = boto3.client("s3")
-cognito_client = boto3.client("cognito-idp")
+dynamodb = get_dynamodb_resource()
+s3_client = get_s3_client()
 
-LOG = Logger(serialize_stacktrace=False)
-tracer = Tracer()
+LOG = logging.getLogger(__name__)
 
 
 def convert_decimals(obj):
@@ -37,7 +33,7 @@ def convert_decimals(obj):
         return obj
 
 
-@tracer.capture_method
+
 def check_access(threat_model_id: str, user_id: str) -> Dict[str, Any]:
     """
     Check if a user has access to a threat model and what level.
@@ -86,7 +82,7 @@ def check_access(threat_model_id: str, user_id: str) -> Dict[str, Any]:
         raise InternalError(str(e))
 
 
-@tracer.capture_method
+
 def share_threat_model(
     threat_model_id: str, owner: str, collaborators: List[Dict[str, str]]
 ) -> Dict:
@@ -161,7 +157,7 @@ def share_threat_model(
         raise InternalError(str(e))
 
 
-@tracer.capture_method
+
 def get_collaborators(threat_model_id: str, requester: str) -> List[Dict]:
     """
     Get list of collaborators for a threat model.
@@ -196,46 +192,13 @@ def get_collaborators(threat_model_id: str, requester: str) -> List[Dict]:
         for item in response.get("Items", []):
             user_id = item.get("user_id")
 
-            # Look up username from Cognito if not in cache
+            # In local no-auth mode, user_id is the username
             if user_id not in user_cache:
-                try:
-                    # Get user details from Cognito
-                    user_response = cognito_client.list_users(
-                        UserPoolId=USER_POOL_ID, Filter=f'sub = "{user_id}"', Limit=1
-                    )
-
-                    if user_response.get("Users"):
-                        cognito_user = user_response["Users"][0]
-                        username = cognito_user.get("Username", user_id)
-
-                        # Extract email and name from attributes
-                        email = None
-                        name = None
-                        for attr in cognito_user.get("Attributes", []):
-                            if attr["Name"] == "email":
-                                email = attr["Value"]
-                            elif attr["Name"] == "name":
-                                name = attr["Value"]
-
-                        user_cache[user_id] = {
-                            "username": username,
-                            "email": email,
-                            "name": name,
-                        }
-                    else:
-                        # User not found in Cognito, use user_id as fallback
-                        user_cache[user_id] = {
-                            "username": user_id,
-                            "email": None,
-                            "name": None,
-                        }
-                except Exception as e:
-                    LOG.warning(f"Failed to lookup user {user_id} in Cognito: {e}")
-                    user_cache[user_id] = {
-                        "username": user_id,
-                        "email": None,
-                        "name": None,
-                    }
+                user_cache[user_id] = {
+                    "username": user_id,
+                    "email": None,
+                    "name": None,
+                }
 
             # Skip the requester from the collaborators list
             if user_id == requester:
@@ -263,7 +226,7 @@ def get_collaborators(threat_model_id: str, requester: str) -> List[Dict]:
         raise InternalError(str(e))
 
 
-@tracer.capture_method
+
 def remove_collaborator(
     threat_model_id: str, owner: str, collaborator_user_id: str
 ) -> Dict:
@@ -337,7 +300,7 @@ def remove_collaborator(
         raise InternalError(str(e))
 
 
-@tracer.capture_method
+
 def update_collaborator_access(
     threat_model_id: str, owner: str, collaborator_user_id: str, new_access_level: str
 ) -> Dict:
@@ -404,7 +367,7 @@ def update_collaborator_access(
         raise InternalError(str(e))
 
 
-@tracer.capture_method
+
 def list_cognito_users(
     search_filter: str = None, max_results: int = 100, exclude_user: str = None
 ) -> Dict:
@@ -419,60 +382,11 @@ def list_cognito_users(
     Returns:
         Dict with list of user dicts containing username, email, name
     """
-    try:
+    # Local no-auth mode: no user directory available, return local-user
+    local_user_id = os.environ.get("LOCAL_USER", "local-user")
+    if exclude_user == local_user_id:
+        return {"users": []}
+    users = [{"username": local_user_id, "user_id": local_user_id, "email": None, "name": "Local User", "enabled": True}]
+    if search_filter and search_filter.lower() not in local_user_id.lower():
         users = []
-        pagination_token = None
-
-        while len(users) < max_results:
-            # Build request parameters
-            params = {
-                "UserPoolId": USER_POOL_ID,
-                "Limit": min(60, max_results - len(users)),
-            }
-
-            if pagination_token:
-                params["PaginationToken"] = pagination_token
-
-            if search_filter:
-                params["Filter"] = f'email ^= "{search_filter}"'
-
-            # List users
-            response = cognito_client.list_users(**params)
-
-            # Extract user information
-            for user in response.get("Users", []):
-                user_data = {
-                    "username": user.get("Username"),
-                    "enabled": user.get("Enabled", False),
-                    "status": user.get("UserStatus"),
-                }
-
-                # Extract attributes
-                user_id = None
-                for attr in user.get("Attributes", []):
-                    if attr["Name"] == "sub":
-                        user_id = attr["Value"]  # UUID from Cognito
-                        user_data["user_id"] = user_id
-                    elif attr["Name"] == "email":
-                        user_data["email"] = attr["Value"]
-                    elif attr["Name"] == "name":
-                        user_data["name"] = attr["Value"]
-                    elif attr["Name"] == "email_verified":
-                        user_data["email_verified"] = attr["Value"] == "true"
-
-                # Skip the excluded user (typically the current user)
-                if exclude_user and user_id == exclude_user:
-                    continue
-
-                users.append(user_data)
-
-            # Check if there are more results
-            pagination_token = response.get("PaginationToken")
-            if not pagination_token:
-                break
-
-        return {"users": users[:max_results]}
-
-    except Exception as e:
-        LOG.error(f"Error listing Cognito users: {e}")
-        raise InternalError(str(e))
+    return {"users": users[:max_results]}
