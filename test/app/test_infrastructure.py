@@ -28,21 +28,6 @@ class TestFixtureAvailability:
         assert mock_s3_client is not None
         assert hasattr(mock_s3_client, "delete_object")
 
-    def test_mock_lambda_client_fixture(self, mock_lambda_client):
-        """Test that mock_lambda_client fixture is available."""
-        assert mock_lambda_client is not None
-        assert hasattr(mock_lambda_client, "invoke")
-
-    def test_mock_cognito_client_fixture(self, mock_cognito_client):
-        """Test that mock_cognito_client fixture is available."""
-        assert mock_cognito_client is not None
-        assert hasattr(mock_cognito_client, "list_users")
-
-    def test_mock_bedrock_client_fixture(self, mock_bedrock_client):
-        """Test that mock_bedrock_client fixture is available."""
-        assert mock_bedrock_client is not None
-        assert hasattr(mock_bedrock_client, "invoke_agent")
-
     def test_mock_environment_fixture(self, mock_environment):
         """Test that mock_environment fixture is available."""
         assert mock_environment is not None
@@ -50,6 +35,7 @@ class TestFixtureAvailability:
         assert "AGENT_STATE_TABLE" in mock_environment
         assert "LOCKS_TABLE" in mock_environment
         assert "SHARING_TABLE" in mock_environment
+        assert "THREAT_DESIGNER_URL" in mock_environment
 
     def test_sample_threat_model_fixture(self, sample_threat_model):
         """Test that sample_threat_model fixture is available."""
@@ -83,12 +69,6 @@ class TestFixtureAvailability:
         assert isinstance(mock_time, float)
         assert mock_time == 1704067200.0
 
-    def test_mock_lambda_context_fixture(self, mock_lambda_context):
-        """Test that mock_lambda_context fixture is available."""
-        assert mock_lambda_context is not None
-        assert hasattr(mock_lambda_context, "function_name")
-        assert mock_lambda_context.function_name == "test-function"
-
 
 class TestMockBehavior:
     """Validate that mock objects behave as expected."""
@@ -107,19 +87,6 @@ class TestMockBehavior:
         """Test that mock S3 client delete_object returns success."""
         result = mock_s3_client.delete_object(Bucket="test", Key="test-key")
         assert result["ResponseMetadata"]["HTTPStatusCode"] == 204
-
-    def test_lambda_client_invoke(self, mock_lambda_client):
-        """Test that mock Lambda client invoke returns success."""
-        result = mock_lambda_client.invoke(
-            FunctionName="test-function", InvocationType="Event"
-        )
-        assert result["StatusCode"] == 202
-
-    def test_cognito_client_list_users(self, mock_cognito_client):
-        """Test that mock Cognito client list_users returns expected structure."""
-        result = mock_cognito_client.list_users(UserPoolId="test-pool")
-        assert "Users" in result
-        assert isinstance(result["Users"], list)
 
 
 class TestDataStructures:
@@ -169,14 +136,3 @@ class TestDataStructures:
         ]
         for field in required_fields:
             assert field in sample_sharing_record, f"Missing field: {field}"
-
-    def test_cognito_user_structure(self, sample_cognito_user):
-        """Test that sample Cognito user has correct structure."""
-        assert "Username" in sample_cognito_user
-        assert "Attributes" in sample_cognito_user
-        assert isinstance(sample_cognito_user["Attributes"], list)
-
-        # Check for required attributes
-        attr_names = [attr["Name"] for attr in sample_cognito_user["Attributes"]]
-        assert "sub" in attr_names
-        assert "email" in attr_names

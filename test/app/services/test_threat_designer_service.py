@@ -2,7 +2,7 @@
 Unit tests for threat_designer_service.py
 
 Tests cover:
-- invoke_lambda: Invoke Bedrock Agent Core for threat modeling
+- invoke_lambda: Invoke threat-designer agent via HTTP for threat modeling
 - check_status: Check status of threat modeling job
 - fetch_results: Fetch threat model results with access control
 - update_results: Update threat model with lock and version control
@@ -18,28 +18,19 @@ from decimal import Decimal
 import pytest
 import json
 import copy
+import httpx
 from botocore.exceptions import ClientError
 
 # Add backend/app to path for imports
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
 
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
-
 # Mock environment variables before importing service
 os.environ["JOB_STATUS_TABLE"] = "test-status-table"
 os.environ["AGENT_STATE_TABLE"] = "test-agent-table"
 os.environ["AGENT_TRAIL_TABLE"] = "test-trail-table"
-os.environ["THREAT_MODELING_AGENT"] = (
-    "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent"
-)
-os.environ["THREAT_MODELING_LAMBDA"] = (
-    "arn:aws:lambda:us-east-1:123456789012:function:test-function"
-)
+os.environ["THREAT_DESIGNER_URL"] = "http://threat-designer:8080"
 os.environ["ARCHITECTURE_BUCKET"] = "test-bucket"
-os.environ["REGION"] = "us-east-1"
 os.environ["SHARING_TABLE"] = "test-sharing-table"
 os.environ["LOCKS_TABLE"] = "test-locks-table"
 
@@ -69,26 +60,24 @@ from exceptions.exceptions import (
 
 
 class TestInvokeLambda:
-    """Tests for invoke_lambda function."""
+    """Tests for invoke_lambda — invokes threat-designer via HTTP POST."""
 
     @patch.dict(
         "os.environ",
         {
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-            "REGION": "us-east-1",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
         },
     )
     @patch("services.threat_designer_service.uuid.uuid4")
-    @patch.object(threat_designer_service, "agent_core_client")
+    @patch("services.threat_designer_service.httpx.post")
     @patch.object(threat_designer_service, "table")
     @patch("services.threat_designer_service.create_dynamodb_item")
     def test_invoke_lambda_creates_agent_state_and_job_status(
-        self, mock_create_item, mock_status_table, mock_agent_client, mock_uuid
+        self, mock_create_item, mock_status_table, mock_httpx_post, mock_uuid
     ):
         """Test invoke_lambda creates agent state and job status in DynamoDB."""
-        # Setup
         mock_uuid.return_value = Mock(hex="test-uuid-123")
         mock_uuid.return_value.__str__ = Mock(return_value="test-uuid-123")
 
@@ -102,25 +91,18 @@ class TestInvokeLambda:
             "replay": False,
         }
 
-        # Execute
         result = invoke_lambda("user-123", payload)
 
-        # Assert
         assert result == {"id": "test-uuid-123"}
 
-        # Verify agent_core_client.invoke_agent_runtime was called
-        mock_agent_client.invoke_agent_runtime.assert_called_once()
-        call_args = mock_agent_client.invoke_agent_runtime.call_args
-        assert (
-            call_args[1]["agentRuntimeArn"]
-            == "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent"
-        )
-
-        # Verify payload structure
-        payload_arg = json.loads(call_args[1]["payload"])
-        assert payload_arg["input"]["s3_location"] == "test-key.json"
-        assert payload_arg["input"]["owner"] == "user-123"
-        assert payload_arg["input"]["replay"] is False
+        # Verify HTTP POST was made to threat-designer
+        mock_httpx_post.assert_called_once()
+        call_args = mock_httpx_post.call_args
+        assert call_args[0][0] == "http://threat-designer:8080/invocations"
+        payload_sent = call_args[1]["json"]
+        assert payload_sent["input"]["s3_location"] == "test-key.json"
+        assert payload_sent["input"]["owner"] == "user-123"
+        assert payload_sent["input"]["replay"] is False
 
         # Verify create_dynamodb_item was called for agent state
         mock_create_item.assert_called_once()
@@ -129,7 +111,7 @@ class TestInvokeLambda:
         assert agent_state["owner"] == "user-123"
         assert agent_state["title"] == "Test Title"
 
-        # Verify job status was created
+        # Verify job status record was created
         mock_status_table.put_item.assert_called_once()
         status_item = mock_status_table.put_item.call_args[1]["Item"]
         assert status_item["id"] == "test-uuid-123"
@@ -142,24 +124,21 @@ class TestInvokeLambda:
         {
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-            "REGION": "us-east-1",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
         },
     )
     @patch("services.threat_designer_service.uuid.uuid4")
-    @patch.object(threat_designer_service, "agent_core_client")
+    @patch("services.threat_designer_service.httpx.post")
     @patch.object(threat_designer_service, "table")
     @patch.object(threat_designer_service, "dynamodb")
     def test_invoke_lambda_creates_backup_before_replay(
-        self, mock_dynamodb, mock_status_table, mock_agent_client, mock_uuid
+        self, mock_dynamodb, mock_status_table, mock_httpx_post, mock_uuid
     ):
         """Test invoke_lambda creates backup before replay."""
-        # Setup
         mock_uuid.return_value = Mock(hex="test-uuid-123")
         mock_uuid.return_value.__str__ = Mock(return_value="session-id-123")
 
         mock_agent_table = Mock()
-
         existing_item = {
             "job_id": "existing-job-123",
             "owner": "user-123",
@@ -167,7 +146,6 @@ class TestInvokeLambda:
             "s3_location": "existing-key.json",
             "description": "Original description",
         }
-
         mock_agent_table.get_item.return_value = {"Item": existing_item}
         mock_dynamodb.Table.return_value = mock_agent_table
 
@@ -182,19 +160,15 @@ class TestInvokeLambda:
             "replay": True,
         }
 
-        # Execute
         result = invoke_lambda("user-123", payload)
 
-        # Assert
         assert result == {"id": "existing-job-123"}
 
-        # Verify backup was created
+        # Verify backup was created before agent invocation
         mock_agent_table.get_item.assert_called_once_with(
             Key={"job_id": "existing-job-123"}
         )
         mock_agent_table.put_item.assert_called_once()
-
-        # Verify backup contains original data
         put_item_call = mock_agent_table.put_item.call_args[1]["Item"]
         assert "backup" in put_item_call
         assert put_item_call["backup"]["description"] == "Original description"
@@ -205,26 +179,21 @@ class TestInvokeLambda:
         {
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-            "REGION": "us-east-1",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
         },
     )
     @patch("services.threat_designer_service.uuid.uuid4")
-    @patch.object(threat_designer_service, "agent_core_client")
+    @patch("services.threat_designer_service.httpx.post")
     @patch.object(threat_designer_service, "table")
     @patch("services.threat_designer_service.create_dynamodb_item")
-    def test_invoke_lambda_handles_invocation_errors(
-        self, mock_create_item, mock_status_table, mock_agent_client, mock_uuid
+    def test_invoke_lambda_handles_connection_errors(
+        self, mock_create_item, mock_status_table, mock_httpx_post, mock_uuid
     ):
-        """Test invoke_lambda handles Lambda invocation errors."""
-        # Setup
+        """Test invoke_lambda raises InternalError when threat-designer is unreachable."""
         mock_uuid.return_value = Mock(hex="test-uuid-123")
         mock_uuid.return_value.__str__ = Mock(return_value="test-uuid-123")
 
-        # Simulate invocation error
-        mock_agent_client.invoke_agent_runtime.side_effect = Exception(
-            "Invocation failed"
-        )
+        mock_httpx_post.side_effect = httpx.ConnectError("Connection refused")
 
         payload = {
             "s3_location": "test-key.json",
@@ -236,9 +205,44 @@ class TestInvokeLambda:
             "replay": False,
         }
 
-        # Execute and Assert
         with pytest.raises(InternalError):
             invoke_lambda("user-123", payload)
+
+    @patch.dict(
+        "os.environ",
+        {
+            "JOB_STATUS_TABLE": "test-status-table",
+            "AGENT_STATE_TABLE": "test-agent-table",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
+        },
+    )
+    @patch("services.threat_designer_service.uuid.uuid4")
+    @patch("services.threat_designer_service.httpx.post")
+    @patch.object(threat_designer_service, "table")
+    @patch("services.threat_designer_service.create_dynamodb_item")
+    def test_invoke_lambda_tolerates_timeout(
+        self, mock_create_item, mock_status_table, mock_httpx_post, mock_uuid
+    ):
+        """Test invoke_lambda treats a timeout as fire-and-forget (not an error)."""
+        mock_uuid.return_value = Mock(hex="test-uuid-123")
+        mock_uuid.return_value.__str__ = Mock(return_value="test-uuid-123")
+
+        # Timeout is expected for long-running analysis jobs
+        mock_httpx_post.side_effect = httpx.TimeoutException("Timeout")
+
+        payload = {
+            "s3_location": "test-key.json",
+            "iteration": 1,
+            "reasoning": 0,
+            "description": "Test description",
+            "assumptions": [],
+            "title": "Test Title",
+            "replay": False,
+        }
+
+        # Should NOT raise — timeout is fire-and-forget
+        result = invoke_lambda("user-123", payload)
+        assert result == {"id": "test-uuid-123"}
 
 
 # ============================================================================

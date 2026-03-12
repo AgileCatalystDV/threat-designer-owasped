@@ -4,13 +4,14 @@ Unit tests for collaboration_service.py
 Tests cover:
 - check_access: Verify user access levels to threat models
 - share_threat_model: Share threat models with collaborators
-- get_collaborators: Retrieve list of collaborators
+- get_collaborators: Retrieve list of collaborators (local no-auth mode)
 - remove_collaborator: Remove collaborator access
 - update_collaborator_access: Update collaborator permissions
-- list_cognito_users: List users from Cognito
+- list_cognito_users: Returns local-user stub in no-auth mode
 """
 
 import sys
+import os
 from pathlib import Path
 from unittest.mock import Mock, patch, call, MagicMock
 from decimal import Decimal
@@ -19,10 +20,6 @@ import pytest
 # Add backend/app to path for imports
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
-
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
 
 from services import collaboration_service
 from services.collaboration_service import (
@@ -424,24 +421,21 @@ class TestShareThreatModel:
 
 
 class TestGetCollaborators:
-    """Tests for get_collaborators function."""
+    """Tests for get_collaborators function (local no-auth mode: user_id IS username)."""
 
     @patch.dict(
         "os.environ",
         {
             "AGENT_STATE_TABLE": "test-agent-table",
             "SHARING_TABLE": "test-sharing-table",
-            "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
         },
     )
-    @patch.object(collaboration_service, "cognito_client")
     @patch.object(collaboration_service, "dynamodb")
     @patch.object(collaboration_service, "check_access")
     def test_get_collaborators_returns_list_with_user_details(
-        self, mock_check_access, mock_dynamodb, mock_cognito
+        self, mock_check_access, mock_dynamodb
     ):
-        """Test returns list of collaborators with user details."""
-        # Setup
+        """Test returns list of collaborators; in local mode user_id is the username."""
         mock_check_access.return_value = {
             "has_access": True,
             "is_owner": True,
@@ -461,30 +455,16 @@ class TestGetCollaborators:
         }
         mock_dynamodb.Table.return_value = mock_sharing_table
 
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "collaborator",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-456"},
-                        {"Name": "email", "Value": "collab@example.com"},
-                        {"Name": "name", "Value": "Collaborator User"},
-                    ],
-                }
-            ]
-        }
-
-        # Execute
         result = get_collaborators("test-job-123", "user-123")
 
-        # Assert
         assert "collaborators" in result
         assert len(result["collaborators"]) == 1
         collab = result["collaborators"][0]
         assert collab["user_id"] == "user-456"
-        assert collab["username"] == "collaborator"
-        assert collab["email"] == "collab@example.com"
-        assert collab["name"] == "Collaborator User"
+        # In local no-auth mode, username == user_id
+        assert collab["username"] == "user-456"
+        assert collab["email"] is None
+        assert collab["name"] is None
         assert collab["access_level"] == "EDIT"
 
     @patch.dict(
@@ -492,17 +472,14 @@ class TestGetCollaborators:
         {
             "AGENT_STATE_TABLE": "test-agent-table",
             "SHARING_TABLE": "test-sharing-table",
-            "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
         },
     )
-    @patch.object(collaboration_service, "cognito_client")
     @patch.object(collaboration_service, "dynamodb")
     @patch.object(collaboration_service, "check_access")
     def test_get_collaborators_excludes_requester(
-        self, mock_check_access, mock_dynamodb, mock_cognito
+        self, mock_check_access, mock_dynamodb
     ):
-        """Test excludes requester from collaborators list."""
-        # Setup
+        """Test excludes the requester from the collaborators list."""
         mock_check_access.return_value = {
             "has_access": True,
             "is_owner": True,
@@ -513,7 +490,7 @@ class TestGetCollaborators:
             "Items": [
                 {
                     "threat_model_id": "test-job-123",
-                    "user_id": "user-123",  # This is the requester
+                    "user_id": "user-123",  # The requester — should be excluded
                     "access_level": "EDIT",
                     "shared_at": "2024-01-01T00:00:00Z",
                     "shared_by": "user-123",
@@ -529,22 +506,8 @@ class TestGetCollaborators:
         }
         mock_dynamodb.Table.return_value = mock_sharing_table
 
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "collaborator",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-456"},
-                        {"Name": "email", "Value": "collab@example.com"},
-                    ],
-                }
-            ]
-        }
-
-        # Execute
         result = get_collaborators("test-job-123", "user-123")
 
-        # Assert
         assert len(result["collaborators"]) == 1
         assert result["collaborators"][0]["user_id"] == "user-456"
 
@@ -553,106 +516,26 @@ class TestGetCollaborators:
         {
             "AGENT_STATE_TABLE": "test-agent-table",
             "SHARING_TABLE": "test-sharing-table",
-            "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
         },
     )
-    @patch.object(collaboration_service, "cognito_client")
     @patch.object(collaboration_service, "dynamodb")
     @patch.object(collaboration_service, "check_access")
-    def test_get_collaborators_cognito_lookup(
-        self, mock_check_access, mock_dynamodb, mock_cognito
+    def test_get_collaborators_returns_empty_when_no_sharing(
+        self, mock_check_access, mock_dynamodb
     ):
-        """Test Cognito lookup for usernames."""
-        # Setup
+        """Test returns empty list when no sharing records exist."""
         mock_check_access.return_value = {
             "has_access": True,
             "is_owner": True,
             "access_level": "OWNER",
         }
         mock_sharing_table = Mock()
-        mock_sharing_table.query.return_value = {
-            "Items": [
-                {
-                    "threat_model_id": "test-job-123",
-                    "user_id": "user-456",
-                    "access_level": "EDIT",
-                    "shared_at": "2024-01-01T00:00:00Z",
-                    "shared_by": "user-123",
-                }
-            ]
-        }
+        mock_sharing_table.query.return_value = {"Items": []}
         mock_dynamodb.Table.return_value = mock_sharing_table
 
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "testuser",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-456"},
-                        {"Name": "email", "Value": "test@example.com"},
-                    ],
-                }
-            ]
-        }
-
-        # Execute
-        get_collaborators("test-job-123", "user-123")
-
-        # Assert
-        mock_cognito.list_users.assert_called_once()
-        call_args = mock_cognito.list_users.call_args
-        # Check keyword arguments
-        assert "UserPoolId" in call_args.kwargs or (
-            len(call_args.args) == 0 and "UserPoolId" in call_args[1]
-        )
-        # The Filter should contain the user_id
-        filter_arg = call_args.kwargs.get("Filter") or call_args[1].get("Filter")
-        assert "user-456" in filter_arg
-
-    @patch.dict(
-        "os.environ",
-        {
-            "AGENT_STATE_TABLE": "test-agent-table",
-            "SHARING_TABLE": "test-sharing-table",
-            "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
-        },
-    )
-    @patch.object(collaboration_service, "cognito_client")
-    @patch.object(collaboration_service, "dynamodb")
-    @patch.object(collaboration_service, "check_access")
-    def test_get_collaborators_handles_cognito_failures_gracefully(
-        self, mock_check_access, mock_dynamodb, mock_cognito
-    ):
-        """Test handles Cognito lookup failures gracefully."""
-        # Setup
-        mock_check_access.return_value = {
-            "has_access": True,
-            "is_owner": True,
-            "access_level": "OWNER",
-        }
-        mock_sharing_table = Mock()
-        mock_sharing_table.query.return_value = {
-            "Items": [
-                {
-                    "threat_model_id": "test-job-123",
-                    "user_id": "user-456",
-                    "access_level": "EDIT",
-                    "shared_at": "2024-01-01T00:00:00Z",
-                    "shared_by": "user-123",
-                }
-            ]
-        }
-        mock_dynamodb.Table.return_value = mock_sharing_table
-
-        # Cognito fails
-        mock_cognito.list_users.side_effect = Exception("Cognito error")
-
-        # Execute
         result = get_collaborators("test-job-123", "user-123")
 
-        # Assert - should still return collaborator with user_id as fallback
-        assert len(result["collaborators"]) == 1
-        assert result["collaborators"][0]["username"] == "user-456"
+        assert result == {"collaborators": []}
 
     @patch.dict(
         "os.environ",
@@ -997,163 +880,48 @@ class TestUpdateCollaboratorAccess:
 
 
 # ============================================================================
-# Tests for list_cognito_users function
+# Tests for list_cognito_users function (local no-auth stub)
 # ============================================================================
 
 
-class TestListCognitoUsers:
-    """Tests for list_cognito_users function."""
+class TestListUsersLocal:
+    """Tests for list_cognito_users in local no-auth mode (returns local-user stub)."""
 
-    @patch.dict("os.environ", {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch.object(collaboration_service, "cognito_client")
-    def test_list_cognito_users_returns_list(self, mock_cognito):
-        """Test returns list of users from Cognito."""
-        # Setup
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "user1",
-                    "Enabled": True,
-                    "UserStatus": "CONFIRMED",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-123"},
-                        {"Name": "email", "Value": "user1@example.com"},
-                        {"Name": "name", "Value": "User One"},
-                    ],
-                },
-                {
-                    "Username": "user2",
-                    "Enabled": True,
-                    "UserStatus": "CONFIRMED",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-456"},
-                        {"Name": "email", "Value": "user2@example.com"},
-                    ],
-                },
-            ]
-        }
-
-        # Execute
+    @patch.dict("os.environ", {"LOCAL_USER": "local-user"})
+    def test_returns_local_user(self):
+        """Test returns local-user entry in no-auth mode."""
         result = list_cognito_users()
 
-        # Assert
         assert "users" in result
-        assert len(result["users"]) == 2
-        assert result["users"][0]["username"] == "user1"
-        assert result["users"][0]["email"] == "user1@example.com"
-
-    @patch.dict("os.environ", {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch.object(collaboration_service, "cognito_client")
-    def test_list_cognito_users_excludes_specified_user(self, mock_cognito):
-        """Test excludes specified user."""
-        # Setup
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "user1",
-                    "Enabled": True,
-                    "UserStatus": "CONFIRMED",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-123"},
-                        {"Name": "email", "Value": "user1@example.com"},
-                    ],
-                },
-                {
-                    "Username": "user2",
-                    "Enabled": True,
-                    "UserStatus": "CONFIRMED",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-456"},
-                        {"Name": "email", "Value": "user2@example.com"},
-                    ],
-                },
-            ]
-        }
-
-        # Execute
-        result = list_cognito_users(exclude_user="user-123")
-
-        # Assert
         assert len(result["users"]) == 1
-        assert result["users"][0]["user_id"] == "user-456"
+        assert result["users"][0]["username"] == "local-user"
+        assert result["users"][0]["user_id"] == "local-user"
 
-    @patch.dict("os.environ", {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch.object(collaboration_service, "cognito_client")
-    def test_list_cognito_users_handles_pagination(self, mock_cognito):
-        """Test handles pagination."""
-        # Setup - simulate pagination
-        mock_cognito.list_users.side_effect = [
-            {
-                "Users": [
-                    {
-                        "Username": "user1",
-                        "Enabled": True,
-                        "UserStatus": "CONFIRMED",
-                        "Attributes": [
-                            {"Name": "sub", "Value": "user-123"},
-                            {"Name": "email", "Value": "user1@example.com"},
-                        ],
-                    }
-                ],
-                "PaginationToken": "token123",
-            },
-            {
-                "Users": [
-                    {
-                        "Username": "user2",
-                        "Enabled": True,
-                        "UserStatus": "CONFIRMED",
-                        "Attributes": [
-                            {"Name": "sub", "Value": "user-456"},
-                            {"Name": "email", "Value": "user2@example.com"},
-                        ],
-                    }
-                ]
-            },
-        ]
+    @patch.dict("os.environ", {"LOCAL_USER": "local-user"})
+    def test_excludes_local_user_when_specified(self):
+        """Test returns empty list when the only user (local-user) is excluded."""
+        result = list_cognito_users(exclude_user="local-user")
 
-        # Execute
-        result = list_cognito_users()
+        assert result == {"users": []}
 
-        # Assert
-        assert len(result["users"]) == 2
-        assert mock_cognito.list_users.call_count == 2
+    @patch.dict("os.environ", {"LOCAL_USER": "local-user"})
+    def test_search_filter_matching(self):
+        """Test search filter returns local-user when filter matches."""
+        result = list_cognito_users(search_filter="local")
 
-    @patch.dict("os.environ", {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch.object(collaboration_service, "cognito_client")
-    def test_list_cognito_users_search_filter(self, mock_cognito):
-        """Test search filter functionality."""
-        # Setup
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "testuser",
-                    "Enabled": True,
-                    "UserStatus": "CONFIRMED",
-                    "Attributes": [
-                        {"Name": "sub", "Value": "user-123"},
-                        {"Name": "email", "Value": "test@example.com"},
-                    ],
-                }
-            ]
-        }
+        assert len(result["users"]) == 1
+        assert result["users"][0]["user_id"] == "local-user"
 
-        # Execute
-        result = list_cognito_users(search_filter="test")
+    @patch.dict("os.environ", {"LOCAL_USER": "local-user"})
+    def test_search_filter_no_match(self):
+        """Test search filter returns empty list when filter doesn't match."""
+        result = list_cognito_users(search_filter="nonexistent")
 
-        # Assert
-        mock_cognito.list_users.assert_called_once()
-        call_args = mock_cognito.list_users.call_args
-        assert "Filter" in call_args[1]
-        assert "test" in call_args[1]["Filter"]
+        assert result == {"users": []}
 
-    @patch.dict("os.environ", {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch.object(collaboration_service, "cognito_client")
-    def test_list_cognito_users_handles_errors(self, mock_cognito):
-        """Test handles Cognito errors."""
-        # Setup
-        mock_cognito.list_users.side_effect = Exception("Cognito service error")
+    @patch.dict("os.environ", {"LOCAL_USER": "local-user"})
+    def test_max_results_respected(self):
+        """Test max_results parameter is respected (stub only has 1 user)."""
+        result = list_cognito_users(max_results=10)
 
-        # Execute & Assert
-        with pytest.raises(InternalError):
-            list_cognito_users()
+        assert len(result["users"]) <= 10

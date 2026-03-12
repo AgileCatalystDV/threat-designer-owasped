@@ -1,0 +1,64 @@
+---
+description: Python backend conventies — Lambda→FastAPI migratie patronen
+globs: backend/**/*.py
+alwaysApply: false
+---
+
+# Backend Python — Migratie Patronen
+
+## Lambda → FastAPI conversie
+
+```python
+# ❌ Lambda handler (oud)
+def handler(event, context):
+    body = json.loads(event['body'])
+    result = process(body)
+    return {'statusCode': 200, 'body': json.dumps(result)}
+
+# ✅ FastAPI endpoint (nieuw)
+@app.post("/analyze")
+async def analyze(request: AnalyzeRequest):
+    result = process(request.model_dump())
+    return result
+```
+
+## Lokale service clients
+
+```python
+# DynamoDB Local
+import boto3, os
+dynamodb = boto3.resource(
+    'dynamodb',
+    endpoint_url=os.environ.get('DYNAMODB_ENDPOINT', 'http://dynamodb-local:8001'),
+    region_name='us-east-1',
+    aws_access_key_id='local',
+    aws_secret_access_key='local'
+)
+
+# MinIO (S3-compatible)
+s3 = boto3.client(
+    's3',
+    endpoint_url=os.environ.get('S3_ENDPOINT', 'http://minio:9000'),
+    aws_access_key_id=os.environ.get('S3_ACCESS_KEY', 'minioadmin'),
+    aws_secret_access_key=os.environ.get('S3_SECRET_KEY', 'minioadmin'),
+    region_name='us-east-1'
+)
+```
+
+## LLM client (OpenAI-compat — Ollama of extern)
+
+```python
+from openai import OpenAI
+client = OpenAI(
+    base_url=os.environ.get('INFERENCE_BASE_URL', 'http://host.docker.internal:11434/v1'),
+    api_key=os.environ.get('INFERENCE_API_KEY', 'local')
+)
+model = os.environ.get('LOCAL_MODEL', 'qwen3:32b')
+```
+
+## Regels
+
+- Gebruik altijd environment variables voor endpoints — geen hardcoded URLs
+- Verwijder `@aws_lambda_powertools` decorators bij migratie
+- Bewaar originele business logic ongewijzigd
+- Pydantic v2 voor request/response models (`model_dump()` niet `.dict()`)

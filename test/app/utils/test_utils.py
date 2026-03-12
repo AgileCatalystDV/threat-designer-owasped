@@ -20,10 +20,6 @@ import pytest
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
 
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
-
 from utils.utils import CustomEncoder, mask_sensitive_attributes, create_dynamodb_item
 
 
@@ -227,24 +223,21 @@ class TestMaskSensitiveAttributes:
 class TestCreateDynamoDBItem:
     """Tests for create_dynamodb_item DynamoDB operation function."""
 
-    @patch("utils.utils.boto3.resource")
+    @patch("utils.utils.get_dynamodb_resource")
     @patch("utils.utils.datetime")
     def test_creates_item_with_correct_structure(
-        self, mock_datetime, mock_boto3_resource
+        self, mock_datetime, mock_get_dynamodb
     ):
         """Test that item is created with correct structure."""
-        # Mock datetime
         mock_now = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = mock_now
 
-        # Mock DynamoDB
         mock_table = Mock()
         mock_table.put_item.return_value = {"ResponseMetadata": {"HTTPStatusCode": 200}}
         mock_dynamodb = Mock()
         mock_dynamodb.Table.return_value = mock_table
-        mock_boto3_resource.return_value = mock_dynamodb
+        mock_get_dynamodb.return_value = mock_dynamodb
 
-        # Test data
         agent_state = {
             "job_id": "test-job-123",
             "s3_location": "test-bucket/test-key.json",
@@ -253,17 +246,13 @@ class TestCreateDynamoDBItem:
             "retry": 0,
         }
 
-        # Call function
         create_dynamodb_item(agent_state, "test-table")
 
-        # Verify DynamoDB calls
-        mock_boto3_resource.assert_called_once_with("dynamodb")
+        mock_get_dynamodb.assert_called_once()
         mock_dynamodb.Table.assert_called_once_with("test-table")
 
-        # Verify put_item was called with correct structure
         mock_table.put_item.assert_called_once()
-        call_args = mock_table.put_item.call_args
-        item = call_args[1]["Item"]
+        item = mock_table.put_item.call_args[1]["Item"]
 
         assert item["job_id"] == "test-job-123"
         assert item["s3_location"] == "test-bucket/test-key.json"
@@ -272,81 +261,64 @@ class TestCreateDynamoDBItem:
         assert item["retry"] == 0
         assert "timestamp" in item
 
-    @patch("utils.utils.boto3.resource")
+    @patch("utils.utils.get_dynamodb_resource")
     @patch("utils.utils.datetime")
-    def test_adds_timestamp(self, mock_datetime, mock_boto3_resource):
+    def test_adds_timestamp(self, mock_datetime, mock_get_dynamodb):
         """Test that timestamp is added to the item."""
-        # Mock datetime
         mock_now = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = mock_now
 
-        # Mock DynamoDB
         mock_table = Mock()
         mock_table.put_item.return_value = {"ResponseMetadata": {"HTTPStatusCode": 200}}
         mock_dynamodb = Mock()
         mock_dynamodb.Table.return_value = mock_table
-        mock_boto3_resource.return_value = mock_dynamodb
+        mock_get_dynamodb.return_value = mock_dynamodb
 
-        # Test data
         agent_state = {"job_id": "test-job-123", "s3_location": "test-key.json"}
 
-        # Call function
         create_dynamodb_item(agent_state, "test-table")
 
-        # Verify timestamp was added
-        call_args = mock_table.put_item.call_args
-        item = call_args[1]["Item"]
-
+        item = mock_table.put_item.call_args[1]["Item"]
         assert item["timestamp"] == "2024-01-15T10:30:00+00:00"
         mock_datetime.now.assert_called_once_with(timezone.utc)
 
-    @patch("utils.utils.boto3.resource")
+    @patch("utils.utils.get_dynamodb_resource")
     @patch("utils.utils.datetime")
-    def test_handles_optional_fields(self, mock_datetime, mock_boto3_resource):
-        """Test that optional fields are handled correctly."""
-        # Mock datetime
+    def test_handles_optional_fields(self, mock_datetime, mock_get_dynamodb):
+        """Test that optional fields default to None when not provided."""
         mock_now = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = mock_now
 
-        # Mock DynamoDB
         mock_table = Mock()
         mock_table.put_item.return_value = {"ResponseMetadata": {"HTTPStatusCode": 200}}
         mock_dynamodb = Mock()
         mock_dynamodb.Table.return_value = mock_table
-        mock_boto3_resource.return_value = mock_dynamodb
+        mock_get_dynamodb.return_value = mock_dynamodb
 
-        # Test data with only required fields
         agent_state = {"job_id": "test-job-123", "s3_location": "test-key.json"}
 
-        # Call function
         create_dynamodb_item(agent_state, "test-table")
 
-        # Verify optional fields are None
-        call_args = mock_table.put_item.call_args
-        item = call_args[1]["Item"]
-
+        item = mock_table.put_item.call_args[1]["Item"]
         assert item["job_id"] == "test-job-123"
         assert item["s3_location"] == "test-key.json"
         assert item["title"] is None
         assert item["owner"] is None
         assert item["retry"] is None
 
-    @patch("utils.utils.boto3.resource")
+    @patch("utils.utils.get_dynamodb_resource")
     @patch("utils.utils.datetime")
-    def test_calls_dynamodb_put_item(self, mock_datetime, mock_boto3_resource):
-        """Test that DynamoDB put_item is called correctly."""
-        # Mock datetime
+    def test_calls_dynamodb_put_item(self, mock_datetime, mock_get_dynamodb):
+        """Test that DynamoDB put_item is called with the correct table name."""
         mock_now = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = mock_now
 
-        # Mock DynamoDB
         mock_table = Mock()
         mock_table.put_item.return_value = {"ResponseMetadata": {"HTTPStatusCode": 200}}
         mock_dynamodb = Mock()
         mock_dynamodb.Table.return_value = mock_table
-        mock_boto3_resource.return_value = mock_dynamodb
+        mock_get_dynamodb.return_value = mock_dynamodb
 
-        # Test data
         agent_state = {
             "job_id": "test-job-456",
             "s3_location": "bucket/key.json",
@@ -355,29 +327,19 @@ class TestCreateDynamoDBItem:
             "retry": 2,
         }
 
-        # Call function
         create_dynamodb_item(agent_state, "my-table")
 
-        # Verify boto3 resource was called
-        mock_boto3_resource.assert_called_once_with("dynamodb")
-
-        # Verify Table was called with correct table name
+        mock_get_dynamodb.assert_called_once()
         mock_dynamodb.Table.assert_called_once_with("my-table")
-
-        # Verify put_item was called
         assert mock_table.put_item.call_count == 1
 
-    @patch("utils.utils.boto3.resource")
+    @patch("utils.utils.get_dynamodb_resource")
     @patch("utils.utils.datetime")
-    def test_raises_exception_on_dynamodb_error(
-        self, mock_datetime, mock_boto3_resource
-    ):
+    def test_raises_exception_on_dynamodb_error(self, mock_datetime, mock_get_dynamodb):
         """Test that exceptions from DynamoDB are raised."""
-        # Mock datetime
         mock_now = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         mock_datetime.now.return_value = mock_now
 
-        # Mock DynamoDB to raise exception
         mock_table = Mock()
         error_response = {"Error": {"Message": "DynamoDB error"}}
         exception = Exception()
@@ -386,11 +348,9 @@ class TestCreateDynamoDBItem:
 
         mock_dynamodb = Mock()
         mock_dynamodb.Table.return_value = mock_table
-        mock_boto3_resource.return_value = mock_dynamodb
+        mock_get_dynamodb.return_value = mock_dynamodb
 
-        # Test data
         agent_state = {"job_id": "test-job-123", "s3_location": "test-key.json"}
 
-        # Verify exception is raised
         with pytest.raises(Exception):
             create_dynamodb_item(agent_state, "test-table")

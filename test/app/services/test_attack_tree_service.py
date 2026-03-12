@@ -15,23 +15,17 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock, call
 import pytest
 import json
+import httpx
 
 # Add backend/app to path for imports
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
 
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
-
 # Mock environment variables before importing service
 os.environ["JOB_STATUS_TABLE"] = "test-status-table"
 os.environ["AGENT_STATE_TABLE"] = "test-agent-table"
 os.environ["ATTACK_TREE_TABLE"] = "test-attack-tree-table"
-os.environ["THREAT_MODELING_AGENT"] = (
-    "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent"
-)
-os.environ["REGION"] = "us-east-1"
+os.environ["THREAT_DESIGNER_URL"] = "http://threat-designer:8080"
 os.environ["SHARING_TABLE"] = "test-sharing-table"
 os.environ["LOCKS_TABLE"] = "test-locks-table"
 
@@ -128,7 +122,7 @@ def sample_threat_model_with_threats():
 
 
 class TestInvokeAttackTreeAgent:
-    """Tests for invoke_attack_tree_agent function."""
+    """Tests for invoke_attack_tree_agent — invokes threat-designer via HTTP POST."""
 
     @patch.dict(
         "os.environ",
@@ -136,25 +130,23 @@ class TestInvokeAttackTreeAgent:
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
             "ATTACK_TREE_TABLE": "test-attack-tree-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
             "SHARING_TABLE": "test-sharing-table",
         },
     )
-    @patch.object(attack_tree_service, "agent_core_client")
+    @patch("services.attack_tree_service.httpx.post")
     @patch("services.collaboration_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
     def test_invoke_attack_tree_agent_creates_status_and_invokes_agent(
         self,
         mock_attack_tree_dynamodb,
         mock_collab_dynamodb,
-        mock_agent_client,
+        mock_httpx_post,
     ):
-        """Test invoke_attack_tree_agent creates status record and invokes agent with composite key."""
-        # Setup
+        """Test invoke_attack_tree_agent creates status record and calls threat-designer via HTTP."""
         mock_state_table = Mock()
         mock_state_table.get_item.return_value = {}  # No existing attack tree
         mock_agent_table = Mock()
-        # Set up threat model data for check_access
         mock_agent_table.get_item.return_value = {
             "Item": {
                 "job_id": "test-tm-123",
@@ -175,7 +167,6 @@ class TestInvokeAttackTreeAgent:
         mock_attack_tree_dynamodb.Table.side_effect = table_selector
         mock_collab_dynamodb.Table.side_effect = table_selector
 
-        # Execute
         result = invoke_attack_tree_agent(
             owner="user-123",
             threat_model_id="test-tm-123",
@@ -184,7 +175,6 @@ class TestInvokeAttackTreeAgent:
             reasoning=1,
         )
 
-        # Assert - verify composite key format
         expected_attack_tree_id = "test-tm-123_sql_injection_attack"
         assert result["attack_tree_id"] == expected_attack_tree_id
         assert result["status"] == "in_progress"
@@ -198,13 +188,14 @@ class TestInvokeAttackTreeAgent:
         assert status_item["threat_model_id"] == "test-tm-123"
         assert status_item["threat_name"] == "SQL Injection Attack"
 
-        # Verify agent invocation with composite key
-        mock_agent_client.invoke_agent_runtime.assert_called_once()
-        call_args = mock_agent_client.invoke_agent_runtime.call_args
-        payload = json.loads(call_args[1]["payload"])
-        assert payload["input"]["attack_tree_id"] == expected_attack_tree_id
-        assert payload["input"]["threat_model_id"] == "test-tm-123"
-        assert payload["input"]["threat_name"] == "SQL Injection Attack"
+        # Verify HTTP POST was made to threat-designer
+        mock_httpx_post.assert_called_once()
+        call_args = mock_httpx_post.call_args
+        assert call_args[0][0] == "http://threat-designer:8080/invocations"
+        payload_sent = call_args[1]["json"]
+        assert payload_sent["input"]["attack_tree_id"] == expected_attack_tree_id
+        assert payload_sent["input"]["threat_model_id"] == "test-tm-123"
+        assert payload_sent["input"]["threat_name"] == "SQL Injection Attack"
 
     @patch.dict(
         "os.environ",
@@ -221,9 +212,7 @@ class TestInvokeAttackTreeAgent:
         self, mock_attack_tree_dynamodb, mock_collab_dynamodb
     ):
         """Test invoke_attack_tree_agent raises UnauthorizedError without EDIT access."""
-        # Setup
         mock_agent_table = Mock()
-        # Set up threat model data with different owner
         mock_agent_table.get_item.return_value = {
             "Item": {
                 "job_id": "test-tm-123",
@@ -238,7 +227,6 @@ class TestInvokeAttackTreeAgent:
         mock_attack_tree_dynamodb.Table.return_value = mock_agent_table
         mock_collab_dynamodb.Table.return_value = mock_agent_table
 
-        # Execute and Assert
         with pytest.raises(UnauthorizedError) as exc_info:
             invoke_attack_tree_agent(
                 owner="user-456",
@@ -255,21 +243,20 @@ class TestInvokeAttackTreeAgent:
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
             "ATTACK_TREE_TABLE": "test-attack-tree-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
             "SHARING_TABLE": "test-sharing-table",
         },
     )
-    @patch.object(attack_tree_service, "agent_core_client")
+    @patch("services.attack_tree_service.httpx.post")
     @patch("services.collaboration_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
     def test_invoke_attack_tree_agent_returns_existing_in_progress_tree(
         self,
         mock_attack_tree_dynamodb,
         mock_collab_dynamodb,
-        mock_agent_client,
+        mock_httpx_post,
     ):
-        """Test invoke_attack_tree_agent returns existing attack tree when status is in_progress."""
-        # Setup
+        """Test returns existing attack tree when status is in_progress."""
         expected_attack_tree_id = "test-tm-123_sql_injection_attack"
         mock_state_table = Mock()
         mock_state_table.get_item.return_value = {
@@ -300,7 +287,6 @@ class TestInvokeAttackTreeAgent:
         mock_attack_tree_dynamodb.Table.side_effect = table_selector
         mock_collab_dynamodb.Table.side_effect = table_selector
 
-        # Execute
         result = invoke_attack_tree_agent(
             owner="user-123",
             threat_model_id="test-tm-123",
@@ -308,16 +294,12 @@ class TestInvokeAttackTreeAgent:
             threat_description="Test",
         )
 
-        # Assert - should return existing without starting new generation
         assert result["attack_tree_id"] == expected_attack_tree_id
         assert result["status"] == "in_progress"
-        assert "message" in result
         assert "already exists" in result["message"]
 
-        # Verify agent was NOT invoked
-        mock_agent_client.invoke_agent_runtime.assert_not_called()
-
-        # Verify no new status record was created
+        # HTTP should NOT be called — existing tree is returned
+        mock_httpx_post.assert_not_called()
         mock_state_table.put_item.assert_not_called()
 
     @patch.dict(
@@ -326,21 +308,20 @@ class TestInvokeAttackTreeAgent:
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
             "ATTACK_TREE_TABLE": "test-attack-tree-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
             "SHARING_TABLE": "test-sharing-table",
         },
     )
-    @patch.object(attack_tree_service, "agent_core_client")
+    @patch("services.attack_tree_service.httpx.post")
     @patch("services.collaboration_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
     def test_invoke_attack_tree_agent_returns_existing_completed_tree(
         self,
         mock_attack_tree_dynamodb,
         mock_collab_dynamodb,
-        mock_agent_client,
+        mock_httpx_post,
     ):
-        """Test invoke_attack_tree_agent returns existing attack tree when status is completed."""
-        # Setup
+        """Test returns existing attack tree when status is completed."""
         expected_attack_tree_id = "test-tm-123_sql_injection_attack"
         mock_state_table = Mock()
         mock_state_table.get_item.return_value = {
@@ -371,7 +352,6 @@ class TestInvokeAttackTreeAgent:
         mock_attack_tree_dynamodb.Table.side_effect = table_selector
         mock_collab_dynamodb.Table.side_effect = table_selector
 
-        # Execute
         result = invoke_attack_tree_agent(
             owner="user-123",
             threat_model_id="test-tm-123",
@@ -379,16 +359,11 @@ class TestInvokeAttackTreeAgent:
             threat_description="Test",
         )
 
-        # Assert - should return existing without starting new generation
         assert result["attack_tree_id"] == expected_attack_tree_id
         assert result["status"] == "completed"
-        assert "message" in result
         assert "already exists" in result["message"]
 
-        # Verify agent was NOT invoked
-        mock_agent_client.invoke_agent_runtime.assert_not_called()
-
-        # Verify no new status record was created
+        mock_httpx_post.assert_not_called()
         mock_state_table.put_item.assert_not_called()
 
     @patch.dict(
@@ -397,21 +372,20 @@ class TestInvokeAttackTreeAgent:
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
             "ATTACK_TREE_TABLE": "test-attack-tree-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
             "SHARING_TABLE": "test-sharing-table",
         },
     )
-    @patch.object(attack_tree_service, "agent_core_client")
+    @patch("services.attack_tree_service.httpx.post")
     @patch("services.collaboration_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
     def test_invoke_attack_tree_agent_allows_retry_for_failed_tree(
         self,
         mock_attack_tree_dynamodb,
         mock_collab_dynamodb,
-        mock_agent_client,
+        mock_httpx_post,
     ):
-        """Test invoke_attack_tree_agent allows retry when status is failed."""
-        # Setup
+        """Test allows retry when previous attempt failed."""
         expected_attack_tree_id = "test-tm-123_sql_injection_attack"
         mock_state_table = Mock()
         mock_state_table.get_item.return_value = {
@@ -443,7 +417,6 @@ class TestInvokeAttackTreeAgent:
         mock_attack_tree_dynamodb.Table.side_effect = table_selector
         mock_collab_dynamodb.Table.side_effect = table_selector
 
-        # Execute
         result = invoke_attack_tree_agent(
             owner="user-123",
             threat_model_id="test-tm-123",
@@ -451,14 +424,11 @@ class TestInvokeAttackTreeAgent:
             threat_description="Test",
         )
 
-        # Assert - should allow retry and start new generation
         assert result["attack_tree_id"] == expected_attack_tree_id
         assert result["status"] == "in_progress"
 
-        # Verify agent WAS invoked (retry allowed)
-        mock_agent_client.invoke_agent_runtime.assert_called_once()
-
-        # Verify new status record was created
+        # HTTP WAS called — retry is allowed for failed trees
+        mock_httpx_post.assert_called_once()
         mock_state_table.put_item.assert_called_once()
 
 
@@ -1088,8 +1058,6 @@ class TestCascadeDeletion:
             "ARCHITECTURE_BUCKET": "test-bucket",
             "SHARING_TABLE": "test-sharing-table",
             "LOCKS_TABLE": "test-locks-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-            "REGION": "us-east-1",
         },
     )
     @patch("utils.authorization.require_owner")
@@ -1215,8 +1183,6 @@ class TestCascadeDeletion:
             "ARCHITECTURE_BUCKET": "test-bucket",
             "SHARING_TABLE": "test-sharing-table",
             "LOCKS_TABLE": "test-locks-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-            "REGION": "us-east-1",
         },
     )
     @patch("utils.authorization.require_owner")
@@ -1317,8 +1283,6 @@ class TestCascadeDeletion:
             "ARCHITECTURE_BUCKET": "test-bucket",
             "SHARING_TABLE": "test-sharing-table",
             "LOCKS_TABLE": "test-locks-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-            "REGION": "us-east-1",
         },
     )
     @patch("utils.authorization.require_owner")
@@ -1523,18 +1487,18 @@ class TestNoForeignKeyStorageProperty:
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
             "ATTACK_TREE_TABLE": "test-attack-tree-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
             "SHARING_TABLE": "test-sharing-table",
         },
     )
-    @patch.object(attack_tree_service, "agent_core_client")
+    @patch("services.attack_tree_service.httpx.post")
     @patch("services.collaboration_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
     def test_no_foreign_key_storage(
         self,
         mock_attack_tree_dynamodb,
         mock_collab_dynamodb,
-        mock_agent_client,
+        mock_httpx_post,
         threat_model_id,
         threat_name,
         threat_description,
@@ -1607,18 +1571,18 @@ class TestDuplicatePreventionCheckProperty:
             "JOB_STATUS_TABLE": "test-status-table",
             "AGENT_STATE_TABLE": "test-agent-table",
             "ATTACK_TREE_TABLE": "test-attack-tree-table",
-            "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
+            "THREAT_DESIGNER_URL": "http://threat-designer:8080",
             "SHARING_TABLE": "test-sharing-table",
         },
     )
-    @patch.object(attack_tree_service, "agent_core_client")
+    @patch("services.attack_tree_service.httpx.post")
     @patch("services.collaboration_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
     def test_duplicate_prevention_check(
         self,
         mock_attack_tree_dynamodb,
         mock_collab_dynamodb,
-        mock_agent_client,
+        mock_httpx_post,
         threat_model_id,
         threat_name,
         threat_description,

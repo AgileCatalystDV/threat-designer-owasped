@@ -20,22 +20,12 @@ import base64
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
 
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
-
 # Mock environment variables before importing service
 os.environ["JOB_STATUS_TABLE"] = "test-status-table"
 os.environ["AGENT_STATE_TABLE"] = "test-agent-table"
 os.environ["AGENT_TRAIL_TABLE"] = "test-trail-table"
-os.environ["THREAT_MODELING_AGENT"] = (
-    "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent"
-)
-os.environ["THREAT_MODELING_LAMBDA"] = (
-    "arn:aws:lambda:us-east-1:123456789012:function:test-function"
-)
+os.environ["THREAT_DESIGNER_URL"] = "http://threat-designer:8080"
 os.environ["ARCHITECTURE_BUCKET"] = "test-bucket"
-os.environ["REGION"] = "us-east-1"
 os.environ["SHARING_TABLE"] = "test-sharing-table"
 os.environ["LOCKS_TABLE"] = "test-locks-table"
 

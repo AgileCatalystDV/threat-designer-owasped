@@ -15,31 +15,21 @@ import pytest
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
 
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
-
 # Mock environment variables before importing services
 os.environ["JOB_STATUS_TABLE"] = "test-status-table"
 os.environ["AGENT_STATE_TABLE"] = "test-agent-table"
 os.environ["AGENT_TRAIL_TABLE"] = "test-trail-table"
-os.environ["THREAT_MODELING_AGENT"] = (
-    "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent"
-)
-os.environ["THREAT_MODELING_LAMBDA"] = (
-    "arn:aws:lambda:us-east-1:123456789012:function:test-function"
-)
+os.environ["THREAT_DESIGNER_URL"] = "http://threat-designer:8080"
 os.environ["ARCHITECTURE_BUCKET"] = "test-bucket"
-os.environ["REGION"] = "us-east-1"
 os.environ["SHARING_TABLE"] = "test-sharing-table"
 os.environ["LOCKS_TABLE"] = "test-locks-table"
-os.environ["COGNITO_USER_POOL_ID"] = "us-east-1_TestPool"
+os.environ["DYNAMODB_ENDPOINT"] = "http://localhost:8001"
+os.environ["LOCAL_USER"] = "local-user"
 
 
 @pytest.fixture(scope="session", autouse=True)
 def mock_boto3_session():
     """Mock boto3 at session level before any imports."""
-    import boto3
     from unittest.mock import patch
 
     with patch("boto3.resource") as mock_resource, patch("boto3.client") as mock_client:
@@ -66,27 +56,6 @@ def mock_boto3_session():
             "ResponseMetadata": {"HTTPStatusCode": 204}
         }
 
-        # Mock Lambda client
-        mock_lambda = Mock()
-        mock_lambda.invoke.return_value = {
-            "StatusCode": 202,
-            "Payload": Mock(read=Mock(return_value=b'{"status": "success"}')),
-        }
-
-        # Mock Cognito client
-        mock_cognito = Mock()
-        mock_cognito.list_users.return_value = {
-            "Users": [],
-            "ResponseMetadata": {"HTTPStatusCode": 200},
-        }
-
-        # Mock Bedrock client
-        mock_bedrock = Mock()
-        mock_bedrock.invoke_agent.return_value = {
-            "ResponseMetadata": {"HTTPStatusCode": 200},
-            "sessionId": "test-session-id",
-        }
-
         def resource_side_effect(service_name, **kwargs):
             if service_name == "dynamodb":
                 return mock_dynamodb
@@ -95,12 +64,6 @@ def mock_boto3_session():
         def client_side_effect(service_name, **kwargs):
             if service_name == "s3":
                 return mock_s3
-            elif service_name == "lambda":
-                return mock_lambda
-            elif service_name == "cognito-idp":
-                return mock_cognito
-            elif service_name == "bedrock-agent-runtime":
-                return mock_bedrock
             return Mock()
 
         mock_resource.side_effect = resource_side_effect
@@ -110,7 +73,4 @@ def mock_boto3_session():
             "dynamodb": mock_dynamodb,
             "table": mock_table,
             "s3": mock_s3,
-            "lambda": mock_lambda,
-            "cognito": mock_cognito,
-            "bedrock": mock_bedrock,
         }

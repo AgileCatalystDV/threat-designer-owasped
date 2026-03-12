@@ -7,7 +7,7 @@ Tests the lock service functionality including:
 - release_lock: Releasing locks gracefully
 - get_lock_status: Getting current lock status
 - force_release_lock: Force releasing locks (owner only)
-- get_username_from_cognito: Helper for username lookup
+- get_username_from_cognito: Returns user_id directly in no-auth mode
 """
 
 import sys
@@ -21,10 +21,6 @@ import time
 # Add backend/app to path for imports
 backend_path = str(Path(__file__).parent.parent.parent.parent / "backend" / "app")
 sys.path.insert(0, backend_path)
-
-# Mock AWS X-Ray before importing services
-sys.modules["aws_xray_sdk"] = MagicMock()
-sys.modules["aws_xray_sdk.core"] = MagicMock()
 
 from services.lock_service import (
     acquire_lock,
@@ -40,64 +36,27 @@ from exceptions.exceptions import NotFoundError, UnauthorizedError, InternalErro
 
 
 # ============================================================================
-# Tests for get_username_from_cognito
+# Tests for get_username_from_cognito (local no-auth passthrough)
 # ============================================================================
 
 
 class TestGetUsernameFromCognito:
-    """Tests for get_username_from_cognito helper function."""
+    """Tests for get_username_from_cognito — in no-auth mode user_id IS the username."""
 
-    @patch("services.lock_service.cognito_client")
-    @patch("services.lock_service.USER_POOL_ID", "us-east-1_TestPool")
-    def test_returns_username_for_valid_user_id(self, mock_cognito):
-        """Test returns username for valid user_id."""
-        # Arrange
-        user_id = "user-123"
-        mock_cognito.list_users.return_value = {
-            "Users": [
-                {
-                    "Username": "testuser",
-                    "Attributes": [{"Name": "sub", "Value": "user-123"}],
-                }
-            ]
-        }
-
-        # Act
-        result = get_username_from_cognito(user_id)
-
-        # Assert
-        assert result == "testuser"
-        mock_cognito.list_users.assert_called_once_with(
-            UserPoolId="us-east-1_TestPool", Filter='sub = "user-123"', Limit=1
-        )
-
-    @patch.dict(os.environ, {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch("services.lock_service.cognito_client")
-    def test_returns_user_id_if_cognito_lookup_fails(self, mock_cognito):
-        """Test returns user_id if Cognito lookup fails."""
-        # Arrange
-        user_id = "user-123"
-        mock_cognito.list_users.return_value = {"Users": []}
-
-        # Act
-        result = get_username_from_cognito(user_id)
-
-        # Assert
+    def test_returns_user_id_as_username(self):
+        """Test that user_id is returned directly as username (no Cognito lookup)."""
+        result = get_username_from_cognito("user-123")
         assert result == "user-123"
 
-    @patch.dict(os.environ, {"COGNITO_USER_POOL_ID": "us-east-1_TestPool"})
-    @patch("services.lock_service.cognito_client")
-    def test_handles_cognito_errors_gracefully(self, mock_cognito):
-        """Test handles Cognito errors gracefully."""
-        # Arrange
-        user_id = "user-123"
-        mock_cognito.list_users.side_effect = Exception("Cognito error")
+    def test_returns_local_user_unchanged(self):
+        """Test that local-user is returned unchanged."""
+        result = get_username_from_cognito("local-user")
+        assert result == "local-user"
 
-        # Act
-        result = get_username_from_cognito(user_id)
-
-        # Assert
-        assert result == "user-123"
+    def test_returns_any_user_id_unchanged(self):
+        """Test that any user_id passes through without modification."""
+        for user_id in ["alice", "bob@example.com", "uuid-1234-5678"]:
+            assert get_username_from_cognito(user_id) == user_id
 
 
 # ============================================================================

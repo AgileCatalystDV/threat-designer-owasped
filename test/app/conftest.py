@@ -2,7 +2,7 @@
 Shared pytest fixtures for backend/app tests.
 
 This module provides common fixtures for testing backend/app components:
-- Mock AWS service clients (DynamoDB, S3, Lambda, Cognito, Bedrock)
+- Mock AWS service clients (DynamoDB, S3)
 - Test data fixtures (threat models, users, locks, sharing records)
 - Environment variable mocking
 - Time mocking for consistent timestamps
@@ -75,48 +75,6 @@ def mock_s3_client():
     return mock_client
 
 
-@pytest.fixture
-def mock_lambda_client():
-    """Mock boto3 Lambda client."""
-    mock_client = Mock()
-
-    # Default response for Lambda invocation
-    mock_client.invoke.return_value = {
-        "StatusCode": 202,
-        "Payload": Mock(read=Mock(return_value=b'{"status": "success"}')),
-        "ResponseMetadata": {"HTTPStatusCode": 202},
-    }
-
-    return mock_client
-
-
-@pytest.fixture
-def mock_cognito_client():
-    """Mock boto3 Cognito client."""
-    mock_client = Mock()
-
-    # Default response for list_users
-    mock_client.list_users.return_value = {
-        "Users": [],
-        "ResponseMetadata": {"HTTPStatusCode": 200},
-    }
-
-    return mock_client
-
-
-@pytest.fixture
-def mock_bedrock_client():
-    """Mock boto3 Bedrock Agent Runtime client."""
-    mock_client = Mock()
-
-    # Default response for invoke_agent
-    mock_client.invoke_agent.return_value = {
-        "ResponseMetadata": {"HTTPStatusCode": 200},
-        "sessionId": "test-session-id",
-    }
-
-    return mock_client
-
 
 # ============================================================================
 # Environment Variable Fixtures
@@ -136,10 +94,10 @@ def mock_environment():
         "LOCKS_TABLE": "test-locks-table",
         "SHARING_TABLE": "test-sharing-table",
         "ARCHITECTURE_BUCKET": "test-bucket",
-        "COGNITO_USER_POOL_ID": "us-east-1_TestPool",
-        "THREAT_MODELING_AGENT": "arn:aws:bedrock-agent:us-east-1:123456789012:agent/test-agent",
-        "REGION": "us-east-1",
-        "AWS_REGION": "us-east-1",
+        "THREAT_DESIGNER_URL": "http://threat-designer:8080",
+        "DYNAMODB_ENDPOINT": "http://localhost:8001",
+        "S3_ENDPOINT": "http://localhost:9000",
+        "LOCAL_USER": "local-user",
     }
 
 
@@ -218,21 +176,6 @@ def sample_sharing_record():
 
 
 @pytest.fixture
-def sample_cognito_user():
-    """Sample Cognito user response structure."""
-    return {
-        "Username": "testuser",
-        "Enabled": True,
-        "UserStatus": "CONFIRMED",
-        "Attributes": [
-            {"Name": "sub", "Value": "user-123"},
-            {"Name": "email", "Value": "test@example.com"},
-            {"Name": "name", "Value": "Test User"},
-        ],
-    }
-
-
-@pytest.fixture
 def sample_job_status():
     """Sample job status data structure."""
     return {
@@ -269,77 +212,3 @@ def mock_datetime():
     return datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
 
 
-# ============================================================================
-# Lambda Context Fixtures
-# ============================================================================
-
-
-@pytest.fixture
-def mock_lambda_context():
-    """Mock AWS Lambda context object."""
-    context = Mock()
-    context.function_name = "test-function"
-    context.function_version = "$LATEST"
-    context.invoked_function_arn = (
-        "arn:aws:lambda:us-east-1:123456789012:function:test-function"
-    )
-    context.memory_limit_in_mb = "128"
-    context.aws_request_id = "test-request-id"
-    context.log_group_name = "/aws/lambda/test-function"
-    context.log_stream_name = "2024/01/01/[$LATEST]test-stream"
-
-    return context
-
-
-@pytest.fixture
-def mock_request_context():
-    """Mock API Gateway request context with authorizer data."""
-    return {
-        "authorizer": {
-            "user_id": "user-123",
-            "username": "testuser",
-            "email": "test@example.com",
-        },
-        "requestId": "test-request-id",
-        "apiId": "test-api-id",
-    }
-
-
-# ============================================================================
-# Helper Fixtures
-# ============================================================================
-
-
-@pytest.fixture
-def sample_lambda_payload():
-    """Sample Lambda invocation payload for threat designer."""
-    return {
-        "job_id": "test-job-123",
-        "user_id": "user-123",
-        "description": "Test threat model description",
-        "assumptions": ["assumption1"],
-        "is_replay": False,
-    }
-
-
-@pytest.fixture
-def sample_api_event():
-    """Sample API Gateway event structure."""
-    return {
-        "httpMethod": "GET",
-        "path": "/threat-models/test-job-123",
-        "pathParameters": {"job_id": "test-job-123"},
-        "queryStringParameters": None,
-        "headers": {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer test-token",
-        },
-        "body": None,
-        "requestContext": {
-            "authorizer": {
-                "user_id": "user-123",
-                "username": "testuser",
-                "email": "test@example.com",
-            }
-        },
-    }
