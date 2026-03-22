@@ -31,6 +31,13 @@ Lightning Mode provides:
 - ⭐ [Star this repo](https://github.com/awslabs/threat-designer) to support the project
 - 📚 [Getting started Guide](./quick-start-guide/quick-start.md)
 
+### threat-designer-owasped — lokale Docker-stack (fork)
+
+- **Gids:** [Lokale stack & rooktest](./quick-start-guide/local-stack-owasped.md)
+- **Env:** `cp .env.local.example .env.local`
+- **Start:** `npm run stack:up` (API + agent + storage) · `npm run stack:up:full` (+ Sentry op :8090)
+- **CI:** compose validate + build — [`.github/workflows/docker-compose.yml`](./.github/workflows/docker-compose.yml)
+
 ---
 
 ## Features

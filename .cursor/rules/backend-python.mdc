@@ -29,7 +29,8 @@ async def analyze(request: AnalyzeRequest):
 import boto3, os
 dynamodb = boto3.resource(
     'dynamodb',
-    endpoint_url=os.environ.get('DYNAMODB_ENDPOINT', 'http://dynamodb-local:8001'),
+    # Docker: http://dynamodb-local:8000 — host Mac met port-map: http://localhost:8001
+    endpoint_url=os.environ.get('DYNAMODB_ENDPOINT', 'http://localhost:8001'),
     region_name='us-east-1',
     aws_access_key_id='local',
     aws_secret_access_key='local'

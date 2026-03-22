@@ -1,0 +1,191 @@
+version: '3.8'
+
+# threat-designer-owasped — local Docker stack
+# Vervangt: AWS DynamoDB → DynamoDB Local, AWS S3 → MinIO
+# LLM: Ollama draait buiten Docker op host (Apple Silicon GPU)
+#       brew install ollama && ollama serve && ollama pull qwen3:32b
+#
+# Profielen:
+#   Standaard (geen Sentry):  docker compose -f docker-compose.local.yml up --build
+#                             of: npm run stack:up
+#   Met Sentry (:8090):       docker compose -f docker-compose.local.yml --profile full up --build
+#                             of: npm run stack:up:full
+#
+# Env: kopieer .env.local.example → .env.local
+
+services:
+
+  # ── Storage ──────────────────────────────────────────────────────────────
+
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: td-dynamodb-local
+    ports:
+      - "8001:8000"
+    command: "-jar DynamoDBLocal.jar -inMemory -sharedDb"
+    # DynamoDB Local healthcheck: service is ready when port 8000 accepts connections
+    # Container responds with 400 (auth error) on any request — that means it's alive
+
+  minio:
+    image: minio/minio:latest
+    container_name: td-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: td-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/threat-designer-bucket &&
+      echo 'MinIO bucket ready.'
+      "
+
+  dynamodb-init:
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.dynamodb-init
+    container_name: td-dynamodb-init
+    depends_on:
+      dynamodb-local:
+        condition: service_started
+    environment:
+      # Binnen Docker-netwerk: container luistert op 8000 (8001 is alleen host→container mapping)
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - AWS_REGION=us-east-1
+      - AWS_DEFAULT_REGION=us-east-1
+      - AGENT_STATE_TABLE=threat-designer-agent-state
+      - JOB_STATUS_TABLE=threat-designer-job-status
+      - AGENT_TRAIL_TABLE=threat-designer-agent-trail
+      - ATTACK_TREE_TABLE=threat-designer-attack-trees
+      - LOCK_TABLE=threat-designer-locks
+      - SHARING_TABLE=threat-designer-sharing
+      - SESSION_TABLE=sentry-sessions-table
+
+  # ── API Gateway (FastAPI — vervangt Lambda + API Gateway) ────────────────
+
+  app:
+    build:
+      context: ./backend/app
+      dockerfile: Dockerfile.local
+    container_name: td-app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.local
+    environment:
+      # Binnen Docker-netwerk: container luistert op 8000 (8001 is alleen host→container mapping)
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - S3_ENDPOINT=http://minio:9000
+      - S3_PUBLIC_ENDPOINT=http://localhost:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - THREAT_DESIGNER_URL=http://threat-designer:8080
+      - LOCAL_USER=local-user
+      - PORTAL_REDIRECT_URL=http://localhost:3000
+      - TRUSTED_ORIGINS=http://localhost:3000,http://localhost:5173
+      # Tabelnamen (zelfde als dynamodb-init) — zonder LOCKS_TABLE/AGENT_* → 500 op o.a. /lock
+      - AWS_REGION=us-east-1
+      - AGENT_STATE_TABLE=threat-designer-agent-state
+      - JOB_STATUS_TABLE=threat-designer-job-status
+      - AGENT_TRAIL_TABLE=threat-designer-agent-trail
+      - ATTACK_TREE_TABLE=threat-designer-attack-trees
+      - LOCKS_TABLE=threat-designer-locks
+      - SHARING_TABLE=threat-designer-sharing
+      - ARCHITECTURE_BUCKET=threat-designer-bucket
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      threat-designer:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Threat Designer Agent (FastAPI) ──────────────────────────────────────
+
+  threat-designer:
+    build:
+      context: ./backend/threat_designer
+      dockerfile: Dockerfile
+    container_name: td-agent
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env.local
+    environment:
+      # Binnen Docker-netwerk: container luistert op 8000 (8001 is alleen host→container mapping)
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - INFERENCE_BASE_URL=http://host.docker.internal:11434/v1
+      - INFERENCE_API_KEY=ollama
+      - MODEL_PROVIDER=ollama
+      - AWS_REGION=us-east-1
+      - AGENT_STATE_TABLE=threat-designer-agent-state
+      - JOB_STATUS_TABLE=threat-designer-job-status
+      - AGENT_TRAIL_TABLE=threat-designer-agent-trail
+      - ATTACK_TREE_TABLE=threat-designer-attack-trees
+      - ARCHITECTURE_BUCKET=threat-designer-bucket
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── Sentry AI Assistant ───────────────────────────────────────────────────
+
+  sentry:
+    profiles:
+      - full
+    build:
+      context: ./backend/sentry
+      dockerfile: Dockerfile.local
+    container_name: td-sentry
+    ports:
+      - "8090:8080"
+    env_file:
+      - .env.local
+    environment:
+      # Binnen Docker-netwerk: container luistert op 8000 (8001 is alleen host→container mapping)
+      - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+      - S3_ENDPOINT=http://minio:9000
+      - S3_ACCESS_KEY=minioadmin
+      - S3_SECRET_KEY=minioadmin
+      - ARCHITECTURE_BUCKET=threat-designer-bucket
+      - INFERENCE_BASE_URL=http://host.docker.internal:11434/v1
+      - INFERENCE_API_KEY=ollama
+      - MODEL_PROVIDER=ollama
+      - SESSION_TABLE=sentry-sessions-table
+      - ATTACK_TREE_TABLE=threat-designer-attack-trees
+      - LOCAL_USER=local-user
+    depends_on:
+      dynamodb-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  minio_data:

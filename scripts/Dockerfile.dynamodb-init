@@ -1,0 +1,10 @@
+# One-shot DynamoDB Local table init — boto3 baked in (geen pip bij elke containerstart).
+# Build: docker compose -f docker-compose.local.yml build dynamodb-init
+
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir boto3==1.40.64
+
+COPY init_dynamo.py /scripts/init_dynamo.py
+
+ENTRYPOINT ["python", "/scripts/init_dynamo.py"]

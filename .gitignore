@@ -13,6 +13,7 @@ testuser.json
 
 # testing
 /coverage
+/.hypothesis/
 
 # production
 /build

@@ -1063,7 +1063,7 @@ class TestCascadeDeletion:
     @patch("utils.authorization.require_owner")
     @patch("services.lock_service.get_lock_status")
     @patch("services.threat_designer_service.check_status")
-    @patch("boto3.client")
+    @patch("services.threat_designer_service.get_s3_client")
     @patch("services.collaboration_service.dynamodb")
     @patch("services.threat_designer_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
@@ -1072,7 +1072,7 @@ class TestCascadeDeletion:
         mock_attack_tree_dynamodb,
         mock_threat_designer_dynamodb,
         mock_collab_dynamodb,
-        mock_boto3_client,
+        mock_get_s3_client,
         mock_check_status,
         mock_get_lock_status,
         mock_require_owner,
@@ -1131,12 +1131,12 @@ class TestCascadeDeletion:
 
         mock_check_status.return_value = {"state": "COMPLETE"}
 
-        # Mock boto3.client to return a mock S3 client
+        # Mock get_s3_client (MinIO-compatible) to return a mock S3 client
         mock_s3 = Mock()
         mock_s3.delete_object.return_value = {
             "ResponseMetadata": {"HTTPStatusCode": 204}
         }
-        mock_boto3_client.return_value = mock_s3
+        mock_get_s3_client.return_value = mock_s3
 
         # Execute - Delete threat model
         result = delete_tm("test-tm-456", "user-123")
@@ -1188,7 +1188,7 @@ class TestCascadeDeletion:
     @patch("utils.authorization.require_owner")
     @patch("services.lock_service.get_lock_status")
     @patch("services.threat_designer_service.check_status")
-    @patch("boto3.client")
+    @patch("services.threat_designer_service.get_s3_client")
     @patch("services.collaboration_service.dynamodb")
     @patch("services.threat_designer_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
@@ -1197,7 +1197,7 @@ class TestCascadeDeletion:
         mock_attack_tree_dynamodb,
         mock_threat_designer_dynamodb,
         mock_collab_dynamodb,
-        mock_boto3_client,
+        mock_get_s3_client,
         mock_check_status,
         mock_get_lock_status,
         mock_require_owner,
@@ -1250,12 +1250,12 @@ class TestCascadeDeletion:
 
         mock_check_status.return_value = {"state": "COMPLETE"}
 
-        # Mock boto3.client to return a mock S3 client
+        # Mock get_s3_client (MinIO-compatible) to return a mock S3 client
         mock_s3 = Mock()
         mock_s3.delete_object.return_value = {
             "ResponseMetadata": {"HTTPStatusCode": 204}
         }
-        mock_boto3_client.return_value = mock_s3
+        mock_get_s3_client.return_value = mock_s3
 
         # Execute - Delete threat model (should succeed despite attack tree failure)
         result = delete_tm("test-tm-789", "user-123")
@@ -1288,7 +1288,7 @@ class TestCascadeDeletion:
     @patch("utils.authorization.require_owner")
     @patch("services.lock_service.get_lock_status")
     @patch("services.threat_designer_service.check_status")
-    @patch("boto3.client")
+    @patch("services.threat_designer_service.get_s3_client")
     @patch("services.collaboration_service.dynamodb")
     @patch("services.threat_designer_service.dynamodb")
     @patch.object(attack_tree_service, "dynamodb")
@@ -1297,7 +1297,7 @@ class TestCascadeDeletion:
         mock_attack_tree_dynamodb,
         mock_threat_designer_dynamodb,
         mock_collab_dynamodb,
-        mock_boto3_client,
+        mock_get_s3_client,
         mock_check_status,
         mock_get_lock_status,
         mock_require_owner,
@@ -1348,12 +1348,12 @@ class TestCascadeDeletion:
 
         mock_check_status.return_value = {"state": "COMPLETE"}
 
-        # Mock boto3.client to return a mock S3 client
+        # Mock get_s3_client (MinIO-compatible) to return a mock S3 client
         mock_s3 = Mock()
         mock_s3.delete_object.return_value = {
             "ResponseMetadata": {"HTTPStatusCode": 204}
         }
-        mock_boto3_client.return_value = mock_s3
+        mock_get_s3_client.return_value = mock_s3
 
         # Execute - Delete threat model
         result = delete_tm("test-tm-999", "user-123")

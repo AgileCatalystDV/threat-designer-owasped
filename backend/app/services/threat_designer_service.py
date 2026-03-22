@@ -16,6 +16,7 @@ from exceptions.exceptions import (
     NotFoundError,
     UnauthorizedError,
     ConflictError,
+    ViewError,
 )
 from utils.utils import create_dynamodb_item
 
@@ -95,8 +96,8 @@ def delete_s3_object(object_key, bucket_name=ARCHITECTURE_BUCKET):
     dict: Response from S3 delete operation
     """
     try:
-        s3_client = boto3.client("s3")
-        response = s3_client.delete_object(Bucket=bucket_name, Key=object_key)
+        client = get_s3_client()
+        response = client.delete_object(Bucket=bucket_name, Key=object_key)
         return response
 
     except ClientError as e:
@@ -582,7 +583,7 @@ def restore(job_id, owner):
 
         if "Item" not in response:
             LOG.warning(f"Item {job_id} not found")
-            raise NotFoundError
+            raise NotFoundError(f"Threat model {job_id} not found")
 
         item = response["Item"]
 
@@ -596,7 +597,7 @@ def restore(job_id, owner):
 
         if "backup" not in item:
             LOG.warning(f"No backup found for job {job_id}")
-            raise NotFoundError
+            raise NotFoundError(f"No backup available to restore for threat model {job_id}")
 
         backup_data = item["backup"]
         response = agent_table.put_item(Item=backup_data)
@@ -625,9 +626,12 @@ def restore(job_id, owner):
         LOG.info(f"Restore completed for job {job_id} with cancelled flag set")
 
         return True
+    except ViewError:
+        # NotFoundError / UnauthorizedError / etc. — niet omzetten naar 500
+        raise
     except Exception as e:
-        LOG.error(f"Failed to restore job {job_id}: {str(e)}")
-        raise InternalError
+        LOG.error(f"Failed to restore job {job_id}: {str(e)}", exc_info=True)
+        raise InternalError(f"Failed to restore job {job_id}: {str(e)}")
 
 
 def validate_pagination_params(limit, filter_mode):

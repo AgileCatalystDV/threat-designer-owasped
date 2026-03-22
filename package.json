@@ -8,6 +8,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "start:local": "vite --mode development",
+    "stack:config": "docker compose -f docker-compose.local.yml config",
+    "stack:config:full": "docker compose -f docker-compose.local.yml --profile full config",
+    "stack:build": "docker compose -f docker-compose.local.yml build",
+    "stack:build:full": "docker compose -f docker-compose.local.yml --profile full build",
+    "stack:up": "docker compose -f docker-compose.local.yml up --build",
+    "stack:up:full": "docker compose -f docker-compose.local.yml --profile full up --build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write ."

@@ -28,8 +28,8 @@ Fork van awslabs/threat-designer (Apache 2.0). Doel: volledig lokale, containeri
 ## AWS-dependency aanpak
 
 ```python
-# boto3 → lokaal endpoint
-dynamodb = boto3.resource('dynamodb', endpoint_url='http://dynamodb-local:8001')
+# boto3 → lokaal endpoint (Docker: dynamodb-local:8000; vanaf host Mac: localhost:8001)
+dynamodb = boto3.resource('dynamodb', endpoint_url='http://dynamodb-local:8000')
 s3 = boto3.client('s3', endpoint_url='http://minio:9000',
     aws_access_key_id='minioadmin', aws_secret_access_key='minioadmin')
 

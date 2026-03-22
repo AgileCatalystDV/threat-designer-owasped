@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from models import InvocationRequest
 from fastapi.middleware.cors import CORSMiddleware
 import boto3
+from aws_clients import get_dynamodb_resource
 from config import ThreatModelingConfig
 from constants import (
     ENV_AGENT_STATE_TABLE,
@@ -36,7 +37,7 @@ from state import AgentState, AssetsList, FlowsList, ThreatsList
 from utils import fetch_results, parse_s3_image_to_base64, update_job_state
 from workflow import ConfigSchema, agent
 
-dynamodb = boto3.resource("dynamodb")
+dynamodb = get_dynamodb_resource()
 S3_BUCKET = os.environ.get(ENV_ARCHITECTURE_BUCKET)
 AGENT_TABLE = os.environ.get(ENV_AGENT_STATE_TABLE)
 

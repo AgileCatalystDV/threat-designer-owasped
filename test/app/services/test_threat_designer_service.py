@@ -908,9 +908,9 @@ class TestDeleteThreatModel:
         # Assert
         assert result["job_id"] == "test-job-123"
         assert result["state"] == "Deleted"
-        # require_owner is called twice: once in delete_tm and once in delete_attack_trees_for_threat_model
-        assert mock_require_owner.call_count == 2
-        mock_require_owner.assert_any_call("test-job-123", "user-123")
+        # require_owner is called once in delete_tm; attack tree cascade uses require_access (not require_owner)
+        assert mock_require_owner.call_count == 1
+        mock_require_owner.assert_called_once_with("test-job-123", "user-123")
         mock_delete_s3.assert_called_once_with("test-key.json")
 
     @patch.dict(
@@ -1232,36 +1232,32 @@ class TestHelperFunctions:
         assert hash1 == hash2
         assert len(hash1) == 64  # SHA256 produces 64 character hex string
 
-    @patch("boto3.client")
-    def test_delete_s3_object_calls_s3_correctly(self, mock_boto_client):
-        """Test delete_s3_object calls S3 correctly."""
-        # Setup
+    @patch("services.threat_designer_service.get_s3_client")
+    def test_delete_s3_object_calls_s3_correctly(self, mock_get_s3):
+        """Test delete_s3_object calls S3 (MinIO) correctly via get_s3_client."""
         mock_s3 = Mock()
         mock_s3.delete_object.return_value = {
             "ResponseMetadata": {"HTTPStatusCode": 204}
         }
-        mock_boto_client.return_value = mock_s3
+        mock_get_s3.return_value = mock_s3
 
-        # Execute
         result = delete_s3_object("test-key.json", "test-bucket")
 
-        # Assert
+        mock_get_s3.assert_called_once()
         mock_s3.delete_object.assert_called_once_with(
             Bucket="test-bucket", Key="test-key.json"
         )
         assert result["ResponseMetadata"]["HTTPStatusCode"] == 204
 
-    @patch("boto3.client")
-    def test_delete_s3_object_handles_errors(self, mock_boto_client):
-        """Test delete_s3_object handles S3 errors."""
-        # Setup
+    @patch("services.threat_designer_service.get_s3_client")
+    def test_delete_s3_object_handles_errors(self, mock_get_s3):
+        """Test delete_s3_object propagates S3/MinIO errors."""
         mock_s3 = Mock()
         mock_s3.delete_object.side_effect = ClientError(
             {"Error": {"Code": "NoSuchKey", "Message": "Key not found"}}, "DeleteObject"
         )
-        mock_boto_client.return_value = mock_s3
+        mock_get_s3.return_value = mock_s3
 
-        # Execute and Assert
         with pytest.raises(ClientError):
             delete_s3_object("nonexistent-key.json")
 
@@ -1479,17 +1475,20 @@ class TestSingleDownloadAuthorizationProperty:
         """
         from services.threat_designer_service import generate_presigned_download_url
         from unittest.mock import patch, MagicMock
+        import services.threat_designer_service as tds_module
 
-        # Mock the authorization check - patch where it's imported
+        # Mock authorization, DynamoDB lookup and S3 presign client
         with (
             patch("utils.authorization.require_access") as mock_require_access,
-            patch(
-                "services.threat_designer_service.extract_threat_model_id_from_s3_location"
-            ) as mock_extract,
+            patch.object(tds_module, "dynamodb") as mock_dynamodb,
             patch("services.threat_designer_service.s3_pre") as mock_s3,
         ):
-            # Setup mocks
-            mock_extract.return_value = threat_model_id
+            # Setup DynamoDB mock: return item with s3_location so the lookup doesn't hang
+            mock_table = MagicMock()
+            mock_table.get_item.return_value = {
+                "Item": {"job_id": threat_model_id, "s3_location": f"{threat_model_id}.json"}
+            }
+            mock_dynamodb.Table.return_value = mock_table
             mock_s3.generate_presigned_url.return_value = (
                 f"https://s3.example.com/{threat_model_id}"
             )
@@ -1548,7 +1547,8 @@ class TestSingleDownloadAuthorizationProperty:
         Validates: Requirements 2.1
         """
         from services.threat_designer_service import generate_presigned_download_url
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
+        import services.threat_designer_service as tds_module
 
         # Test cases: (user_id, should_have_access)
         test_cases = [
@@ -1560,13 +1560,15 @@ class TestSingleDownloadAuthorizationProperty:
         for user_id, should_have_access in test_cases:
             with (
                 patch("utils.authorization.require_access") as mock_require_access,
-                patch(
-                    "services.threat_designer_service.extract_threat_model_id_from_s3_location"
-                ) as mock_extract,
+                patch.object(tds_module, "dynamodb") as mock_dynamodb,
                 patch("services.threat_designer_service.s3_pre") as mock_s3,
             ):
-                # Setup mocks
-                mock_extract.return_value = threat_model_id
+                # Setup DynamoDB mock to avoid real AWS calls
+                mock_table = MagicMock()
+                mock_table.get_item.return_value = {
+                    "Item": {"job_id": threat_model_id, "s3_location": f"{threat_model_id}.json"}
+                }
+                mock_dynamodb.Table.return_value = mock_table
                 mock_s3.generate_presigned_url.return_value = (
                     f"https://s3.example.com/{threat_model_id}"
                 )
@@ -1630,17 +1632,22 @@ class TestSufficientAccessGrantsPresignedURLsProperty:
         from services.threat_designer_service import (
             generate_presigned_download_url_with_auth,
         )
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
+        import services.threat_designer_service as tds_module
+
+        mock_s3_location = f"{threat_model_id}.json"
 
         with (
             patch("utils.authorization.require_access") as mock_require_access,
-            patch(
-                "services.threat_designer_service.extract_threat_model_id_from_s3_location"
-            ) as mock_extract,
+            patch.object(tds_module, "dynamodb") as mock_dynamodb,
             patch("services.threat_designer_service.s3_pre") as mock_s3,
         ):
-            # Setup mocks
-            mock_extract.return_value = threat_model_id
+            # Setup DynamoDB mock to avoid real AWS/MinIO calls
+            mock_table = MagicMock()
+            mock_table.get_item.return_value = {
+                "Item": {"job_id": threat_model_id, "s3_location": mock_s3_location}
+            }
+            mock_dynamodb.Table.return_value = mock_table
             expected_url = f"https://s3.example.com/{threat_model_id}"
             mock_s3.generate_presigned_url.return_value = expected_url
 
@@ -1672,7 +1679,7 @@ class TestSufficientAccessGrantsPresignedURLsProperty:
             assert call_kwargs["Params"]["Bucket"] == os.environ.get(
                 "ARCHITECTURE_BUCKET"
             )
-            assert call_kwargs["Params"]["Key"] == threat_model_id
+            assert call_kwargs["Params"]["Key"] == mock_s3_location
             assert call_kwargs["ExpiresIn"] == 300
             assert call_kwargs["HttpMethod"] == "GET"
 
@@ -1696,7 +1703,8 @@ class TestSufficientAccessGrantsPresignedURLsProperty:
         from services.threat_designer_service import (
             generate_presigned_download_url_with_auth,
         )
-        from unittest.mock import patch
+        from unittest.mock import patch, MagicMock
+        import services.threat_designer_service as tds_module
 
         # Test cases: (user_id, access_level)
         test_cases = [
@@ -1708,13 +1716,15 @@ class TestSufficientAccessGrantsPresignedURLsProperty:
         for user_id, access_level in test_cases:
             with (
                 patch("utils.authorization.require_access") as mock_require_access,
-                patch(
-                    "services.threat_designer_service.extract_threat_model_id_from_s3_location"
-                ) as mock_extract,
+                patch.object(tds_module, "dynamodb") as mock_dynamodb,
                 patch("services.threat_designer_service.s3_pre") as mock_s3,
             ):
-                # Setup mocks
-                mock_extract.return_value = threat_model_id
+                # Setup DynamoDB mock to avoid real AWS/MinIO calls
+                mock_table = MagicMock()
+                mock_table.get_item.return_value = {
+                    "Item": {"job_id": threat_model_id, "s3_location": f"{threat_model_id}.json"}
+                }
+                mock_dynamodb.Table.return_value = mock_table
                 expected_url = (
                     f"https://s3.example.com/{threat_model_id}?user={user_id}"
                 )
@@ -1764,15 +1774,20 @@ class TestSufficientAccessGrantsPresignedURLsProperty:
         )
         from unittest.mock import patch
 
+        from unittest.mock import MagicMock
+        import services.threat_designer_service as tds_module
+
         with (
             patch("utils.authorization.require_access") as mock_require_access,
-            patch(
-                "services.threat_designer_service.extract_threat_model_id_from_s3_location"
-            ) as mock_extract,
+            patch.object(tds_module, "dynamodb") as mock_dynamodb,
             patch("services.threat_designer_service.s3_pre") as mock_s3,
         ):
-            # Setup mocks
-            mock_extract.return_value = threat_model_id
+            # Setup DynamoDB mock to avoid real AWS/MinIO calls
+            mock_table = MagicMock()
+            mock_table.get_item.return_value = {
+                "Item": {"job_id": threat_model_id, "s3_location": f"{threat_model_id}.json"}
+            }
+            mock_dynamodb.Table.return_value = mock_table
             expected_url = f"https://s3.example.com/{threat_model_id}"
             mock_s3.generate_presigned_url.return_value = expected_url
 

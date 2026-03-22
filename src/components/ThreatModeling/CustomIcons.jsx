@@ -157,7 +157,7 @@ const SpinnerContainer = styled.div`
   animation: rotate 2s linear infinite;
   width: 64px;
   height: 64px;
-  cursor: ${(props) => (props.clickable ? "pointer" : "default")};
+  cursor: ${(props) => (props.$clickable ? "pointer" : "default")};
 `;
 
 const Text = styled.div`
@@ -168,7 +168,7 @@ const Text = styled.div`
 export const LoadingSpinner = ({ color = "#006ce0", clickable }) => {
   return (
     <Container>
-      <SpinnerContainer clickable={clickable}>
+      <SpinnerContainer $clickable={clickable === true}>
         <svg
           width="64px"
           height="64px"
@@ -339,7 +339,7 @@ export const Stepper = ({ steps, currentStep = 0, onViewportChange }) => {
                 }
               >
                 {currentStep === index ? (
-                  <LoadingSpinner color={"#006ce0"} clickable={false} />
+                  <LoadingSpinner color={"#006ce0"} />
                 ) : (
                   React.cloneElement(step.icon, {
                     color: index < currentStep ? "#f9f9fa" : "#656871",

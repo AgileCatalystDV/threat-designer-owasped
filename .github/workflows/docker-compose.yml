@@ -1,0 +1,28 @@
+# Valideert docker-compose.local.yml en bouwt images (CI) — geen stack runtime.
+name: Docker Compose
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare .env.local for compose
+        run: cp .env.local.example .env.local
+
+      - name: Validate compose (default profile)
+        run: docker compose -f docker-compose.local.yml config --quiet
+
+      - name: Validate compose (full profile)
+        run: docker compose -f docker-compose.local.yml --profile full config --quiet
+
+      - name: Build images (default + dynamodb-init)
+        run: docker compose -f docker-compose.local.yml build
+
+      - name: Build images (full profile includes sentry)
+        run: docker compose -f docker-compose.local.yml --profile full build

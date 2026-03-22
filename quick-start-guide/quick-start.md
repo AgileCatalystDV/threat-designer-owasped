@@ -2,6 +2,18 @@
 
 Welcome to Threat Designer, an AI-powered agentic application for automated threat modeling. These guides will help you get started and make the most of Threat Designer's capabilities.
 
+---
+
+## threat-designer-owasped (deze fork)
+
+Voor **lokale Docker**, **rooktest**, en het werkproces **virtuele agent (Cursor) → daarna lokale Qwen/Ollama**:
+
+→ **[Lokale stack & rooktest](./local-stack-owasped.md)**
+
+De overige guides hieronder zijn grotendeels **upstream** (AWS / algemene UI); voor stack-beslissingen en no-auth zie ook [`../docs/README.md`](../docs/README.md) en [`../sprints.md`](../sprints.md).
+
+---
+
 ## Getting Started
 
 New to Threat Designer? Start here to understand the complete workflow from submission to analysis.

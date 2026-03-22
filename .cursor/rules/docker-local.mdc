@@ -1,0 +1,54 @@
+---
+description: Docker Compose en Dockerfile conventies voor lokale stack
+globs: docker-compose*.yml, Dockerfile*
+alwaysApply: false
+---
+
+# Docker — Lokale Stack Conventies
+
+## Service poorten
+
+| Service | Poort | Doel |
+|---------|-------|------|
+| frontend | 3000:80 | Vite/nginx |
+| backend | 8000:8000 | FastAPI |
+| dynamodb-local | 8001:8000 | DynamoDB Local |
+| minio | 9000:9000 | S3 API |
+| minio-console | 9001:9001 | MinIO beheer UI |
+
+## Standaard environment variabelen (backend)
+
+```yaml
+environment:
+  - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
+  - S3_ENDPOINT=http://minio:9000
+  - S3_ACCESS_KEY=minioadmin
+  - S3_SECRET_KEY=minioadmin
+  - INFERENCE_BASE_URL=http://host.docker.internal:11434/v1  # Ollama
+  - INFERENCE_API_KEY=local
+  - LOCAL_MODEL=qwen3:32b
+  - AUTH_MODE=local
+  - ENABLE_SENTRY=false
+```
+
+## Ollama op macOS
+
+Ollama draait **buiten Docker** voor Apple Silicon Metal GPU access:
+```bash
+brew install ollama && ollama serve
+# In docker-compose: gebruik host.docker.internal:11434
+```
+
+## MinIO bucket initialisatie
+
+Buckets worden niet automatisch aangemaakt — gebruik een init container of startup script:
+```yaml
+minio-init:
+  image: minio/mc
+  depends_on: [minio]
+  entrypoint: >
+    /bin/sh -c "
+    mc alias set local http://minio:9000 minioadmin minioadmin &&
+    mc mb --ignore-existing local/threat-designer-bucket
+    "
+```

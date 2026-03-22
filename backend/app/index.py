@@ -12,7 +12,10 @@ from routes import threat_designer_route, attack_tree_route
 from utils.utils import custom_serializer, mask_sensitive_attributes
 
 PORTAL_REDIRECT_URL = os.getenv("PORTAL_REDIRECT_URL", "http://localhost:3000")
-TRUSTED_ORIGINS_RAW = os.getenv("TRUSTED_ORIGINS", "http://localhost:3000")
+# Standaard Vite (5173) + poort 3000; override via TRUSTED_ORIGINS in Docker / .env.local
+TRUSTED_ORIGINS_RAW = os.getenv(
+    "TRUSTED_ORIGINS", "http://localhost:3000,http://localhost:5173"
+)
 trusted_origins = [o.strip() for o in TRUSTED_ORIGINS_RAW.split(",")]
 
 logger = logging.getLogger(__name__)
@@ -24,7 +27,7 @@ app.add_middleware(
     allow_origins=trusted_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept"],
 )
 
 app.include_router(threat_designer_route.router)
