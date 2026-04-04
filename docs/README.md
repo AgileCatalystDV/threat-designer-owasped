@@ -12,7 +12,7 @@
 | [**Lokale stack & rooktest**](../quick-start-guide/local-stack-owasped.md) | Docker Compose, `.env.local.example` → `.env.local`, `npm run stack:up` / `stack:up:full` (Sentry), Vite + `VITE_SENTRY_BASE_URL` voor assistent-UI, curl-checks |
 | [Quick Start index](../quick-start-guide/quick-start.md) | Upstream guides-index + link naar lokale fork-doc |
 | [Project Goal](../src/projectgoal.md) | Volledige projectvisie, tech spec, OWASP plan |
-| [Sprints](../sprints.md) | Sprint history, taken, Definition of Done, huidige focus |
+| [Sprints](../sprints.md) | Sprint history, taken, Definition of Done, huidige focus; backlog o.a. [relationele DB](sprints.md#backlog-rdbms) (Postgres/MySQL, chirurgisch) |
 | [Team & Agents](../src/agents.md) | Team manifest, spelregels, werkwijze |
 
 ---

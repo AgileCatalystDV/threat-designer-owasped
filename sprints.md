@@ -19,6 +19,7 @@
 | Sprint 7 | Testcode Modernisering | ✅ Afgerond | 2026-03-12 |
 | Sprint 7b | Test Failure Fixes | ✅ Afgerond | 2026-03-12 |
 | **Sprint 8** | **Lokale dev-scripts + UI smoke (Playwright)** | 🔄 Gepland | — |
+| **Backlog** | **Relationele DB (PostgreSQL of MySQL) i.p.v. DynamoDB** | 📋 Toekomst — geen start zonder LeadPM-go | — |
 
 ### Huidige focus (Sprint 8 — gestart)
 
@@ -46,6 +47,7 @@
 | **Auth / OWASP LLM Top 10 templates** | Zoals eerder: **na** stabiele rooktest + Sprint 8-gate (zie huidige focus hierboven). |
 | **Docs / repo (2026-04-04)** | Sync: Sentry **Vite** (`VITE_SENTRY_BASE_URL`), `add_threats` coercion + `THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS`, pytest-paden `test/threat_designer/`, QA-notes onder `docs/qa/`. |
 | **Retro 2026-04-04** | [`docs/team/retro-2026-04-04.md`](docs/team/retro-2026-04-04.md) — integratiedag, rollen, DynamoDB persistence-notitie. |
+| **Relationele DB-backlog** | PostgreSQL/MySQL i.p.v. DynamoDB — **chirurgisch** + `pytest`; geen start zonder LeadPM-go → [§ Backlog RDBMS](#backlog-rdbms). |
 
 
 ---
@@ -579,6 +581,26 @@ Sprint 1 taken **S1-01 … S1-05** hebben de AWS-touchpoints in kaart gebracht; 
 
 Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md) (prompt/tool-uitlijning, `tool_choice`, fallbacks, tests). Geen verplichte S8-taken; wel input voor een vervolgsprint of incrementele PR’s.
 
+<a id="backlog-rdbms"></a>
+
+### Backlog — relationele database (PostgreSQL of MySQL i.p.v. DynamoDB Local)
+
+**Status:** niet gestart — **expliciete LeadPM-go** vóór eerste spike. Geen automatische sprintnummering tot scope en timing vastliggen.
+
+**Waarom (context):** DynamoDB Local draait in de huidige Compose-setup met **`-inMemory`** — data overleeft geen container-stop; MinIO blijft wél via volume. Een relationele DB (PostgreSQL of MySQL) kan **persistente** dev-data en bekende SQL-tooling bieden, maar is **niet** drop-in qua datamodel (DynamoDB single-table / partitiepatronen ≠ relationele normalisatie).
+
+**Aanpak — verplicht chirurgisch** (zie ook [`.cursor/rules/project-core.mdc`](.cursor/rules/project-core.mdc) — één grens per keer):
+
+| Pijler | Richtlijn |
+|--------|-----------|
+| **Grens** | Eén **data-access-laag** (repository of evolutie van `get_dynamodb_resource` / table helpers) — geen “alles in één PR” rewrite. |
+| **Tests eerst / parallel** | Bestaande **`pytest`** (`test/app/`, services, routes) groen houden; nieuwe adapter krijgt **eigen** unit tests; waar zinvol contracttests op dezelfde service-API. |
+| **Stappen** | (1) Abstractie + tests voor huidige pad; (2) tweede implementatie achter dezelfde interface; (3) schakelen via **env/feature-flag**; (4) oude pad verwijderen na regressie + LeadPM-akkoord. |
+| **DevOps** | Aparte Compose-service (Postgres of MySQL), init/migraties; **MinIO/S3** niet in dezelfde wijziging door elkaar trekken. |
+| **QA** | Relevante subset `functional-checklist` + volledige pytest waar geraakt; geen merge zonder bewuste gate. |
+
+**Niet in scope Sprint 8** — dit is een **toekomstige oefening** na stabiele stack (en eventueel na Sprint 8 smoke), niet blokkerend voor S8-DoD.
+
 ---
 
-*Bijgehouden door CoPM — laatste update: planning check + LLM-backlog link (2026-04-04); Sprint 8 PVA (2026-03-12)*
+*Bijgehouden door CoPM — laatste update: relationele DB-backlog + planning check (2026-04-04); Sprint 8 PVA (2026-03-12)*
