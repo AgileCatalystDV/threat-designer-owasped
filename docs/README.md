@@ -23,6 +23,7 @@
 |----------|-------------|
 | [Team Personas & Skills](team/personas.md) | Skills matrix per AI-persona, escalatie matrix |
 | [**Retro & HITL — tussentijdse review**](team/retro-hitl-2026-03.md) | Feedback HITL, processen, spelregels; rondje per persona + acties |
+| [**Retro 2026-04-04**](team/retro-2026-04-04.md) | Integratiedag: add_threats/Sentry/docs, LM Studio, samenwerking, DynamoDB in-memory |
 | [QA — functionele tests](qa/README.md) | Index + [`functional-checklist.md`](qa/functional-checklist.md) |
 | [Cursor / Composer vs product](tooling/cursor-composer.md) | Composer 2 & Kimi (officiële link); **scheiding** IDE-assistent vs Ollama/stack |
 

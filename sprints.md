@@ -45,6 +45,7 @@
 | **LLM / assets (lokale modellen)** | Geen aparte sprint; **verwacht formaat + backlog** vastgelegd in [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md). Opvolging: **LeadPM-prioriteit** — kan door **Dev** parallel aan Sprint 8, **niet** blokkerend voor S8-smoke. |
 | **Auth / OWASP LLM Top 10 templates** | Zoals eerder: **na** stabiele rooktest + Sprint 8-gate (zie huidige focus hierboven). |
 | **Docs / repo (2026-04-04)** | Sync: Sentry **Vite** (`VITE_SENTRY_BASE_URL`), `add_threats` coercion + `THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS`, pytest-paden `test/threat_designer/`, QA-notes onder `docs/qa/`. |
+| **Retro 2026-04-04** | [`docs/team/retro-2026-04-04.md`](docs/team/retro-2026-04-04.md) — integratiedag, rollen, DynamoDB persistence-notitie. |
 
 
 ---
