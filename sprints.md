@@ -18,23 +18,34 @@
 | Sprint 6 | Sentry AI Assistant (lokaal) | ✅ Afgerond | 2026-03-12 |
 | Sprint 7 | Testcode Modernisering | ✅ Afgerond | 2026-03-12 |
 | Sprint 7b | Test Failure Fixes | ✅ Afgerond | 2026-03-12 |
+| **Sprint 8** | **Lokale dev-scripts + UI smoke (Playwright)** | 🔄 Gepland | — |
 
-### Huidige focus (na Sprint 7b)
+### Huidige focus (Sprint 8 — gestart)
 
-**Status: klaar om te starten** — geen extra ontwerpwerk nodig voor deze fase; voer lokaal uit volgens de gids.
+**Status: in uitvoering** — zie [**Sprint 8**](#sprint-8--lokale-dev-scripts--ui-smoke-playwright) (PVA DevOps + QA).
 
-- **Lokale stack**: `docker compose` + rooktest (API, storage, optioneel LLM als Ollama draait). **Stap-voor-stap:** [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md).
-- **Cursor (hier)**: co-creatief prompts/flows scherp krijgen — **jij** voert het gesprek met de IDE-agent; dat is géén vervanging voor integratietests.
-- **Model vraag/antwoord (zelf)**: echte inference = **jij** via de app + **Ollama/Qwen op de host** (`INFERENCE_BASE_URL` → `host.docker.internal:11434`). **KISS:** geen MCP- of “backloop”-architectuur naar het Cursor-interne model; dat bewust niet bouwen.
-- **Geen authenticatie (Cognito/JWT) inbouwen** totdat de lokale Docker/E2E rooktest **door LeadPM akkoord** is. No-auth (`LOCAL_USER`) blijft tot die gate.
-- OWASP LLM Top 10 STRIDE-templates en verdere productfeatures **na** stabiele lokale basis.
+- **Lokale stack**: `docker compose` / `npm run stack:up` + rooktest. **Gids:** [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md).
+- **Cursor (hier)**: co-creatief prompts/flows — géén vervanging voor pytest/E2E.
+- **Model vraag/antwoord (zelf)**: Ollama op host — **KISS:** geen MCP-backloop naar Cursor-intern model.
+- **Geen authenticatie (Cognito/JWT)** tot LeadPM de rooktest-/E2E-gate akkoord geeft.
+- OWASP LLM Top 10 STRIDE-templates **na** stabiele lokale basis + Sprint 8 smoke.
 
-#### QA — functionele testen ✅ checklist beschikbaar
+#### QA — functionele testen ✅ checklist + Sprint 8 automatisering
 
-- **Doel**: naast groene **pytest**-suite ook **user journeys** — “product werkt lokaal end-to-end” (browser + Docker + optioneel Ollama).
-- **Artefact**: [`docs/qa/functional-checklist.md`](docs/qa/functional-checklist.md) — handmatig afvinken na relevante wijzigingen (LeadPM/QA).
-- **Automatisering**: optioneel later (Playwright tegen `localhost:5173`) — **KISS**: eerst checklist.
-- **Koppeling**: rooktest in [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md) = technische basis; checklist = **product-laag**.
+- **Handmatig**: [`docs/qa/functional-checklist.md`](docs/qa/functional-checklist.md) (blijft gelden).
+- **Geautomatiseerd (Sprint 8)**: Playwright-smoke tegen UI (`localhost:5173`), eerste scope **zonder** zware LLM-flow; CI-optioneel.
+- **Koppeling**: rooktest = technische basis; checklist = product-laag; Playwright = **regressie/smoke** bovenop.
+
+### Planning check (team) — 2026-04-04
+
+| Onderdeel | Stand |
+|-----------|--------|
+| **Sprint 1–7** | ✅ Afgerond (zie tabel hierboven). |
+| **Sprint 8** | 🔄 **Actief / niet afgerond** — PVA-taken **S8-D01 … S8-Q04** en **Definition of Done** staan nog open; focus: **lokale dev-workflow + Playwright UI-smoke** (zonder zware LLM-flow in v1-E2E). |
+| **LLM / assets (lokale modellen)** | Geen aparte sprint; **verwacht formaat + backlog** vastgelegd in [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md). Opvolging: **LeadPM-prioriteit** — kan door **Dev** parallel aan Sprint 8, **niet** blokkerend voor S8-smoke. |
+| **Auth / OWASP LLM Top 10 templates** | Zoals eerder: **na** stabiele rooktest + Sprint 8-gate (zie huidige focus hierboven). |
+| **Docs / repo (2026-04-04)** | Sync: Sentry **Vite** (`VITE_SENTRY_BASE_URL`), `add_threats` coercion + `THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS`, pytest-paden `test/threat_designer/`, QA-notes onder `docs/qa/`. |
+
 
 ---
 
@@ -421,6 +432,8 @@ Sprint 1 taken **S1-01 … S1-05** hebben de AWS-touchpoints in kaart gebracht; 
 | 2026-03-12 | Sentry tijdelijk via extern model, geen lokale Ollama installatie | LeadPM |
 | 2026-03-12 | Start met Fase 1 (storage) als eerste sprint | LeadPM |
 | 2026-03-12 | Cursor rules: carte blanche aan AI team | LeadPM |
+| 2026-03-12 | **Retro & HITL:** tussentijdse review vastgelegd in [`docs/team/retro-hitl-2026-03.md`](docs/team/retro-hitl-2026-03.md) — feedback proces/spelregels; LeadPM vult open velden / prioriteiten | LeadPM + team |
+| 2026-03-22 | **Retro follow-up:** H1/H3 terecht; H2 blijven volgen; H4 uitwerken; H5 in scope via spelregels. P2–P4 akkoord. `agents.md` uitgebreid (geen shadow IT, geen overeager assistentie). CoPM akkoord | LeadPM |
 
 ---
 
@@ -521,4 +534,50 @@ Sprint 1 taken **S1-01 … S1-05** hebben de AWS-touchpoints in kaart gebracht; 
 
 ---
 
-*Bijgehouden door CoPM — laatste update: SVZ Sprints 2–7b + dependency-overzicht + focus/auth-gate (2026-03-12)*
+## Sprint 8 — Lokale dev-scripts + UI smoke (Playwright)
+
+**Status**: 🔄 Gepland / in uitvoering  
+**Scope**: Na Sprint 7b — **één duidelijke lokale workflow** (DevOps) + **eerste geautomatiseerde UI-smoke** (QA), passend bij het afgesproken PVA.
+
+### Doel
+
+- **DevOps**: ontwikkelaars starten backend + frontend **voorspelbaar** (documentatie en/of korte scripts), zonder de bestaande `stack:*`-commando’s te dupliceren.
+- **QA**: **Playwright** draait minimaal **1–3 smoke-tests** in de browser (app laadt, geen wit scherm, eventueel zichtbare shell/navigatie); **geen** volledige threat-model LLM-run in v1 (flaky i.v.m. Ollama/timing) — optioneel later als `@slow` of handmatig via checklist.
+
+### PVA — taken
+
+#### DevOps
+
+- [ ] **S8-D01** Korte **dev workflow** in docs: `cp .env.local.example` → `.env.local`, `npm run stack:up`, tweede terminal `npm run dev` — verwijs naar [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md) (geen tweede “waarheid” naast Compose).
+- [ ] **S8-D02** Optioneel: `scripts/` of root **README-sectie** “twee terminals” / link naar `package.json` `stack:*` — **KISS**, geen verplichte `concurrently` tenzij team dat wil.
+- [ ] **S8-D03** **CI**: compose blijft zoals [`.github/workflows/docker-compose.yml`](.github/workflows/docker-compose.yml); Playwright in CI **optioneel** in deze sprint (aparte job of follow-up).
+
+#### QA
+
+- [ ] **S8-Q01** **Playwright** toevoegen (`@playwright/test`), config baseren op `http://localhost:5173` (baseURL via env).
+- [ ] **S8-Q02** Minimaal **één smoke-spec**: app opent, **no-auth** pad (geen login-blokkade), assertie op root/landings-UI (stabiele selector of `getByRole` waar mogelijk).
+- [ ] **S8-Q03** `npm run test:e2e` (of `test:ui`) script + korte sectie in [`docs/qa/README.md`](docs/qa/README.md) (hoe lokaal draaien: stack + Vite verplicht).
+- [ ] **S8-Q04** [`docs/qa/functional-checklist.md`](docs/qa/functional-checklist.md): regel toevoegen dat E2E-smoke **aanvult** checklist, niet vervangt.
+
+### Definition of Done Sprint 8
+
+- [ ] Documentatie + (optioneel) scripts: **één** heldere “start lokaal”-flow; geen conflicterende instructies met `docker-compose.local.yml`.
+- [ ] Playwright smoke **groen** lokaals tegen draaiende **app (8000) + Vite (5173)**.
+- [ ] Geen harde afhankelijkheid van Ollama in de eerste E2E-tests (rooktest blijft apart).
+- [ ] LeadPM kan gate gebruiken: handmatige checklist **of** geautomatiseerde smoke als onderdeel van “lokale kwaliteit”.
+
+### Input per persona
+
+| Persona | Inbreng |
+|---------|---------|
+| **DevOps** | Scripts/docs, CI-grenzen, geen dubbele compose-“magie”. |
+| **QA** | Playwright-scope, selectors, documentatie `test:e2e`. |
+| **LeadPM** | Go/no-go na eerste groene smoke + bestaande rooktest/checklist. |
+
+### Backlog — LLM assets (niet in Sprint 8 DoD)
+
+Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md) (prompt/tool-uitlijning, `tool_choice`, fallbacks, tests). Geen verplichte S8-taken; wel input voor een vervolgsprint of incrementele PR’s.
+
+---
+
+*Bijgehouden door CoPM — laatste update: planning check + LLM-backlog link (2026-04-04); Sprint 8 PVA (2026-03-12)*

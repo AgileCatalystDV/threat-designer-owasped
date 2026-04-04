@@ -7,7 +7,9 @@ Includes tools for working with Amazon Bedrock and structured data.
 import base64
 import copy
 import decimal
+import json
 import os
+import re
 import traceback
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, ParamSpec, TypeVar, Union
@@ -710,6 +712,90 @@ def parse_s3_image_to_base64(bucket_name: str, object_key: str) -> Optional[str]
 # AI MODEL UTILITIES
 # ============================================================================
 
+# Qwen / LM Studio / DeepSeek-style thinking tags that must not be parsed as asset data
+_LT, _GT = chr(60), chr(62)
+_THINKING_BLOCK_PATTERNS = (
+    re.compile(
+        _LT + "redacted_thinking" + _GT + r".*?" + _LT + "/" + "redacted_thinking" + _GT,
+        re.DOTALL | re.IGNORECASE,
+    ),
+    re.compile(
+        _LT + "think" + _GT + r".*?" + _LT + "/" + "think" + _GT,
+        re.DOTALL | re.IGNORECASE,
+    ),
+    re.compile(_LT + "/" + "redacted_thinking" + _GT, re.IGNORECASE),
+)
+
+
+def strip_thinking_markers(text: str) -> str:
+    """Remove model thinking / chain-of-thought blocks from plain text."""
+    if not text or not isinstance(text, str):
+        return text
+    s = text
+    for pat in _THINKING_BLOCK_PATTERNS:
+        s = pat.sub("", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def sanitize_tool_invocation_args(args: Any) -> Any:
+    """Recursively strip thinking markers from strings in tool call arguments."""
+    if isinstance(args, dict):
+        return {k: sanitize_tool_invocation_args(v) for k, v in args.items()}
+    if isinstance(args, list):
+        return [sanitize_tool_invocation_args(v) for v in args]
+    if isinstance(args, str):
+        return strip_thinking_markers(args)
+    return args
+
+
+def extract_text_from_base_message(msg: BaseMessage) -> str:
+    """
+    Flatten assistant content to plain text for structure-retry (OpenAI, Bedrock, LM Studio).
+
+    Skips obvious thinking-only blocks; strips thinking tags from combined text.
+    """
+    content = getattr(msg, "content", None)
+    parts: List[str] = []
+
+    if content is None:
+        parts = []
+    elif isinstance(content, str):
+        parts = [content]
+    elif isinstance(content, list):
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                btype = block.get("type", "")
+                if btype in ("thinking",):
+                    continue
+                if btype == "text":
+                    parts.append(str(block.get("text", "")))
+                elif btype == "reasoning":
+                    continue
+                elif btype == "reasoning_content":
+                    rc = block.get("reasoning_content") or {}
+                    if isinstance(rc, dict) and rc.get("text"):
+                        parts.append(str(rc["text"]))
+                elif "text" in block:
+                    parts.append(str(block.get("text", "")))
+            else:
+                parts.append(str(block))
+    else:
+        parts = [str(content)]
+
+    text = "\n".join(parts)
+    text = strip_thinking_markers(text)
+
+    if not text.strip() and hasattr(msg, "tool_calls") and getattr(msg, "tool_calls", None):
+        try:
+            text = json.dumps(msg.tool_calls, ensure_ascii=False)
+        except Exception:
+            text = str(msg.tool_calls)
+
+    return text
+
 
 def _retry_with_structure(
     model: ChatBedrockConverse, response: BaseMessage, struct: ChatBedrockConverse
@@ -737,8 +823,13 @@ def _retry_with_structure(
             ]
         )
 
-        reasoning = response.content[0].get("reasoning_content", {}).get("text", None)
-        struct_message = [structure_prompt(reasoning), human_structure]
+        raw_text = extract_text_from_base_message(response)
+        if not raw_text.strip():
+            raw_text = "(empty model response)"
+            logger.warning("Structured output retry: no text extracted from message")
+
+        system_message = SystemMessage(content=structure_prompt(raw_text))
+        struct_message = [system_message, human_structure]
         model_with_tools = model.with_structured_output(struct)
 
         result = model_with_tools.invoke(struct_message)

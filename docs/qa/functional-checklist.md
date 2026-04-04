@@ -78,7 +78,7 @@
 
 | # | Check | OK | Opmerking |
 |---|--------|----|-----------|
-| 6.1 | Sentry UI/flow alleen als container **td-sentry** draait + frontend `VITE_SENTRY_*` | [ ] | |
+| 6.1 | Sentry UI/flow: **`td-sentry`** draait (`stack:up:full`) + Vite **`VITE_SENTRY_ENABLED=true`** en **`VITE_SENTRY_BASE_URL=http://localhost:8090`** (lokaal); zonder `VITE_SENTRY_BASE_URL` verwacht de UI AWS Bedrock | [ ] | |
 | 6.2 | Threat run voltooit met **Ollama** (model bereikbaar op host) | [ ] | Zonder Ollama: failure verwacht op agent |
 
 ---

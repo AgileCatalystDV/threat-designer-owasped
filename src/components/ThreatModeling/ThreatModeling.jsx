@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import SpaceBetween from "@cloudscape-design/components/space-between";
 import { SubmissionComponent } from "./SubmissionForm";
-import { Modal } from "@cloudscape-design/components";
+import { Alert, Modal } from "@cloudscape-design/components";
 import { uploadFile } from "./docs";
 import { useNavigate } from "react-router-dom";
 import { startThreatModeling, generateUrl } from "../../services/ThreatDesigner/stats";
@@ -11,11 +11,12 @@ import "./ThreatModeling.css";
 export default function ThreatModeling() {
   const [iteration, setIteration] = useState({ label: "Auto", value: 0 });
   const [reasoning, setReasoning] = useState("0");
-  const [base64Content, setBase64Content] = useState([]);
+  const [base64Content, setBase64Content] = useState(null);
   const [id, setId] = useState(null);
   const [visible, setVisible] = useState(false);
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [startError, setStartError] = useState(null);
 
   const handleBase64Change = (base64) => {
     setBase64Content(base64);
@@ -23,6 +24,7 @@ export default function ThreatModeling() {
 
   const handleStartThreatModeling = async (title, description, assumptions, applicationType) => {
     setLoading(true);
+    setStartError(null);
     try {
       const results = await generateUrl(base64Content?.type);
       await uploadFile(base64Content?.value, results?.data?.presigned, base64Content?.type);
@@ -43,6 +45,9 @@ export default function ThreatModeling() {
       setId(response.data.id);
     } catch (error) {
       console.error("Error starting threat modeling:", error);
+      const apiMsg = error?.response?.data?.message;
+      const fallback = error?.message ?? String(error);
+      setStartError(typeof apiMsg === "string" ? apiMsg : fallback);
       setLoading(false);
     }
   };
@@ -65,6 +70,7 @@ export default function ThreatModeling() {
         <div style={{ marginTop: "200px" }}>
           <GenAiButton
             onClick={() => {
+              setStartError(null);
               setVisible(true);
             }}
           >
@@ -73,22 +79,38 @@ export default function ThreatModeling() {
         </div>
       </div>
       <Modal
-        onDismiss={() => setVisible(false)}
+        onDismiss={() => {
+          setVisible(false);
+          setStartError(null);
+        }}
         visible={visible}
         size="large"
         header={"Threat model"}
       >
-        <SubmissionComponent
-          onBase64Change={handleBase64Change}
-          base64Content={base64Content}
-          iteration={iteration}
-          setIteration={setIteration}
-          setVisible={setVisible}
-          handleStart={handleStartThreatModeling}
-          loading={loading}
-          reasoning={reasoning}
-          setReasoning={setReasoning}
-        />
+        <SpaceBetween size="m">
+          {startError ? (
+            <Alert
+              type="error"
+              statusIconAriaLabel="Error"
+              header="Could not start threat modeling"
+              dismissible
+              onDismiss={() => setStartError(null)}
+            >
+              {startError}
+            </Alert>
+          ) : null}
+          <SubmissionComponent
+            onBase64Change={handleBase64Change}
+            base64Content={base64Content}
+            iteration={iteration}
+            setIteration={setIteration}
+            setVisible={setVisible}
+            handleStart={handleStartThreatModeling}
+            loading={loading}
+            reasoning={reasoning}
+            setReasoning={setReasoning}
+          />
+        </SpaceBetween>
       </Modal>
     </SpaceBetween>
   );

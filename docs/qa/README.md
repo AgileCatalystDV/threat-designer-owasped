@@ -13,6 +13,7 @@
 | Artefact | Beschrijving |
 |----------|--------------|
 | [**functional-checklist.md**](functional-checklist.md) | **Actief** — handmatig afvinken: happy paths + bekende foutpaden |
+| [`*.md` in deze map](.) | Optionele **QA-captures** (request/response dumps, LLM-logs) — ter referentie; geen vervanging voor pytest |
 | (later) E2E | Optioneel Playwright — alleen na KISS-checklist stabiel |
 
 ## Basis

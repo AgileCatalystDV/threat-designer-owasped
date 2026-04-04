@@ -2,6 +2,8 @@
 This module defines the state sub-graph and orchestrates the threat generation logic in auto mode
 """
 
+import os
+
 from config import config as app_config
 from constants import (
     JobState,
@@ -23,6 +25,11 @@ from tools import (
     catalog_stats,
     create_dynamic_add_threats_tool,
 )
+from add_threats_tool_args import (
+    coerce_add_threats_tool_calls_in_messages,
+    count_add_threats_tool_schema_errors,
+)
+from exceptions import ThreatModelingError
 from state import ThreatState, ConfigSchema, create_constrained_threat_model
 from message_builder import MessageBuilder, list_to_string
 from prompts import create_agent_system_prompt
@@ -80,8 +87,11 @@ def _build_session_tools(state: ThreatState) -> list:
 def dynamic_tool_node(state: ThreatState) -> Command:
     """Tool node that uses session-specific dynamic tools."""
     session_tools = _build_session_tools(state)
+    messages = coerce_add_threats_tool_calls_in_messages(
+        list(state.get("messages") or []), state
+    )
     node = ToolNode(session_tools)
-    return node.invoke(state)
+    return node.invoke({**dict(state), "messages": messages})
 
 
 # Initialize state service for tracking job state and trails
@@ -142,7 +152,39 @@ def agent_node(state: ThreatState, config: RunnableConfig) -> Command:
     tool_use = state.get("tool_use", 0)
     gap_tool_use = state.get("gap_tool_use", 0)
 
-    # Initialize messages if empty
+    max_schema_loop = int(
+        os.environ.get("THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS", "3")
+    )
+    persisted = state.get("messages") or []
+    err_count = count_add_threats_tool_schema_errors(persisted)
+    if err_count >= max_schema_loop:
+        logger.error(
+            "Aborting threat agent: repeated add_threats schema validation errors",
+            job_id=job_id,
+            error_count=err_count,
+            max_errors=max_schema_loop,
+        )
+        raise ThreatModelingError(
+            "The add_threats tool failed repeatedly with a schema validation error. "
+            "Aborting to avoid an infinite loop. If this persists, check LangChain "
+            "and model versions, or file an issue with the threat-designer-owasped project."
+        )
+
+    # Always rebuild system + human with current state (architecture + catalog).
+    # Important: we only persist assistant/tool deltas in ``state["messages"]`` (see
+    # ``Command(update={"messages": [response]})``). If we passed ``state["messages"]``
+    # alone on continuation turns, the list would contain no ``HumanMessage`` — only
+    # ``AIMessage`` / ``ToolMessage``. That is valid for some APIs, but LM Studio (and
+    # other OpenAI-compatible servers with strict Qwen Jinja templates) require at
+    # least one conversational turn with API role ``user`` (LangChain: ``HumanMessage``)
+    # in the payload — unrelated to app authentication or multi-user identity.
+    instructions = state.get("instructions")
+    app_type = state.get("application_type", "hybrid")
+    system_prompt = create_agent_system_prompt(
+        instructions, application_type=app_type
+    )
+    human_message = create_agent_human_message(state)
+
     if not state.get("messages"):
         # Update job state to indicate threat generation has started
         state_service.update_job_state(job_id, JobState.THREAT.value, 0)
@@ -156,16 +198,6 @@ def agent_node(state: ThreatState, config: RunnableConfig) -> Command:
             gap_tool_use=gap_tool_use,
         )
 
-        # Create initial system prompt with optional instructions
-        instructions = state.get("instructions")
-        app_type = state.get("application_type", "hybrid")
-        system_prompt = create_agent_system_prompt(
-            instructions, application_type=app_type
-        )
-
-        # Create initial human message with context
-        human_message = create_agent_human_message(state)
-
         messages = [system_prompt, human_message]
     else:
         logger.debug(
@@ -176,7 +208,7 @@ def agent_node(state: ThreatState, config: RunnableConfig) -> Command:
             tool_use=tool_use,
             gap_tool_use=gap_tool_use,
         )
-        messages = state["messages"]
+        messages = [system_prompt, human_message, *state["messages"]]
 
     # Update status to "Thinking" while agent is reasoning
     state_service.update_job_state(job_id, JobState.THREAT.value, detail="Thinking")

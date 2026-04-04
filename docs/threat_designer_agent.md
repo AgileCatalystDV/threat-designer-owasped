@@ -1192,6 +1192,10 @@ This section describes the tools available to the agent during threat catalog ge
 
 - `threats`: ThreatsList object with threat details
 
+**threat-designer-owasped (local LLMs / OpenAI-compat servers)**:
+
+Some models return a raw list of threat dicts. Before `ToolNode.invoke`, arguments are normalized in `add_threats_tool_args.py`: the session’s `ThreatsList` or dynamic constrained model validates the payload, then **`model_dump()`** is passed so LangChain’s schema validation receives plain dicts (passing only Pydantic instances can still fail with “valid dictionary or instance of ThreatsList”). If the same tool schema error repeats on `add_threats`, the agent aborts after **`THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS`** (default 3, overridable via environment) with `ThreatModelingError` to avoid infinite loops.
+
 **Behavior**:
 
 1. Checks tool usage limit (max 7 invocations)

@@ -148,9 +148,44 @@ docker compose -f docker-compose.local.yml --profile full logs sentry --tail 80
 
 Met **`full`**: `app`, `threat-designer`, `sentry` horen te draaien. Als `sentry` **Exited** is: build-fout, ontbrekende `.env.local`, of dependency — lees de logs.
 
-### 3.4 Als Ollama niet draait
+### 3.4 Als inference niet bereikbaar is (Ollama / ander endpoint)
 
-Containers die `INFERENCE_BASE_URL` naar `host.docker.internal:11434` gebruiken (**threat-designer**, **sentry**) krijgen pas echte antwoorden als **Ollama op de host** luistert. Zonder Ollama: storage/API-rooktest kan nog steeds slagen; **LLM-features falen** tot Ollama draait. *(Sentry **/ping** hoort óók zonder Ollama HTTP 200 te geven — alleen inference faalt dan.)*
+**threat-designer** en **sentry** lezen `INFERENCE_BASE_URL` uit **`.env.local`**. Zonder bereikbare OpenAI-compat-API: storage/API-rooktest kan slagen; **LLM-features falen** tot het endpoint antwoord geeft. *(Sentry **/ping** kan nog 200 zijn — alleen chat/inference faalt.)*
+
+### 3.5 LM Studio op het LAN (andere machine, poort 1234)
+
+LM Studio exposeert een **OpenAI-compatibele** API. De **base URL** voor de app is **`http://<ip>:1234/v1`** — niet `…/v1/models` (dat is alleen de model-lijst).
+
+1. **Model-id** ophalen: open in de browser of `curl`  
+   `http://192.168.68.101:1234/v1/models`  
+   en noteer het **`id`** van het geladen model (exact overnemen in `LOCAL_MODEL`).  
+   **Voorlopige teamkeuze:** Qwen 3.5 27B — hier: `id` = `qwen3.5-27b` (exact uit `/v1/models`).
+
+2. **`.env.local`** (voorbeeld; pas IP aan indien nodig):
+
+   ```bash
+   MODEL_PROVIDER=ollama
+   LOCAL_MODEL=qwen3.5-27b
+   INFERENCE_BASE_URL=http://192.168.68.101:1234/v1
+   INFERENCE_API_KEY=lm-studio
+   ```
+
+3. **Compose herstarten** na wijziging: `npm run stack:up` (of `docker compose … up`).
+
+4. **Netwerk:** de machine met Docker moet het LM Studio-toestel op het LAN kunnen pingen; op de LM Studio-pc **firewall** poort **1234** toestaan indien nodig.
+
+5. **Check vanuit de agent-container** (optioneel):
+
+   ```bash
+   docker compose -f docker-compose.local.yml exec threat-designer \
+     python -c "import urllib.request; print(urllib.request.urlopen('http://192.168.68.101:1234/v1/models').read()[:200])"
+   ```
+
+   *(Vervang het IP door jouw LM Studio-host.)*
+
+6. **Threat modeling / assets-stap faalt met `list index out of range` of “no tool calls”:**  
+   De agent verwacht **structured tool calls** (geen platte tekst alleen). De code dwingt nu de juiste tool aan voor `MODEL_PROVIDER=ollama` (Ollama + LM Studio). Na een **code-update**: `docker compose -f docker-compose.local.yml build threat-designer --no-cache && docker compose … up`.  
+   Blijft het falen: kies een model met **betrouwbare function-calling** in LM Studio, of test tijdelijk met **Ollama** op de host.
 
 ---
 
@@ -164,6 +199,23 @@ npm run dev
 ```
 
 Open de URL die Vite toont (meestal **http://localhost:5173**). API-base: `.env.development` → `VITE_APP_ENDPOINT=http://localhost:8000`.
+
+### 4.3 Sentry-assistent in de browser (optioneel)
+
+Sentry draait in Docker op **http://localhost:8090** (`POST /invocations`) alleen met **`--profile full`**. De Vite-app moet daar naartoe wijzen — **niet** naar AWS Bedrock, tenzij je bewust cloud-deploy gebruikt.
+
+1. Zet in **`.env.development`** (of een lokale **`.env.local`** naast Vite — ook gitignored) minimaal:
+
+   ```bash
+   VITE_SENTRY_ENABLED=true
+   VITE_SENTRY_BASE_URL=http://localhost:8090
+   ```
+
+2. **Zonder** `VITE_SENTRY_BASE_URL` bouwt de UI de Bedrock AgentCore-URL (`VITE_APP_SENTRY` + regio) — dat werkt niet tegen de lokale `td-sentry`-container.
+
+3. Herstart `npm run dev`. Open een **afgerond** threat model → knop **AI** / Assistant-drawer → chat (“Ask Sentry…”).
+
+Zie ook [`using-sentry.md`](./using-sentry.md) (upstream UI-gedrag) en [`docs/README.md`](../docs/README.md) → Sentry Design.
 
 ### 4.1 Crash: `Cannot find module '@rollup/rollup-darwin-x64'`
 
@@ -207,4 +259,4 @@ Blijft het fout? **Intel Mac:** `npm install @rollup/rollup-darwin-x64 --save-de
 
 ---
 
-*Laatste update: threat-designer-owasped — `.env.local.example`, dynamodb-init image, compose profile `full`, npm `stack:*`, CI compose*
+*Laatste update: 2026-04-04 — Sentry frontend (`VITE_SENTRY_BASE_URL`), rooktest, CI compose*

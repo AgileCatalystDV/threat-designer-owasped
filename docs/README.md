@@ -9,7 +9,7 @@
 
 | Document | Beschrijving |
 |----------|-------------|
-| [**Lokale stack & rooktest**](../quick-start-guide/local-stack-owasped.md) | Docker Compose, `.env.local.example` → `.env.local`, `npm run stack:up` / `stack:up:full` (Sentry), curl-checks |
+| [**Lokale stack & rooktest**](../quick-start-guide/local-stack-owasped.md) | Docker Compose, `.env.local.example` → `.env.local`, `npm run stack:up` / `stack:up:full` (Sentry), Vite + `VITE_SENTRY_BASE_URL` voor assistent-UI, curl-checks |
 | [Quick Start index](../quick-start-guide/quick-start.md) | Upstream guides-index + link naar lokale fork-doc |
 | [Project Goal](../src/projectgoal.md) | Volledige projectvisie, tech spec, OWASP plan |
 | [Sprints](../sprints.md) | Sprint history, taken, Definition of Done, huidige focus |
@@ -22,7 +22,9 @@
 | Document | Beschrijving |
 |----------|-------------|
 | [Team Personas & Skills](team/personas.md) | Skills matrix per AI-persona, escalatie matrix |
+| [**Retro & HITL — tussentijdse review**](team/retro-hitl-2026-03.md) | Feedback HITL, processen, spelregels; rondje per persona + acties |
 | [QA — functionele tests](qa/README.md) | Index + [`functional-checklist.md`](qa/functional-checklist.md) |
+| [Cursor / Composer vs product](tooling/cursor-composer.md) | Composer 2 & Kimi (officiële link); **scheiding** IDE-assistent vs Ollama/stack |
 
 ---
 
@@ -38,7 +40,8 @@
 | [Collaboration System](collaboration_system.md) | Samenwerking, toegangsniveaus (OWNER/EDIT/READ_ONLY) | Actueel |
 | [Lock Mechanism](lock_mechanism.md) | Optimistic locking voor concurrent editing | Actueel |
 | [Sentry Design](sentry_design.md) | AI agent orchestratie (Sentry service, poort 8090) | Actueel |
-| [Threat Designer Agent](threat_designer_agent.md) | LLM agent loop, STRIDE analyse, threat generatie | Actueel |
+| [Threat Designer Agent](threat_designer_agent.md) | LLM agent loop, STRIDE analyse, threat generatie; `add_threats`-normalisatie vóór `ToolNode` + abort bij herhaalde schema-fouten | Actueel |
+| [**LLM assets — formaat & verbeteringen**](llm-assets-format-and-improvements.md) | Verwacht tool/JSON-formaat vs. prompt-tekst; backlog (lokale modellen, fallbacks) | Actueel |
 
 > ¹ **Auth opmerking**: Cognito/JWT authenticatie is uitgeschakeld voor lokaal gebruik. `user_id` fungeert als `username`. Zie `LOCAL_USER` env var in `docker-compose.local.yml`.
 
@@ -66,20 +69,26 @@
 | `test/app/utils/` | Utility & authorization tests |
 | `test/app/exceptions/` | Exception class tests |
 | `test/app/test_infrastructure.py` | Fixture validatie |
+| `test/threat_designer/` | Unit tests: plain-text assetblokken (`asset_text_blocks`, zie `docs/qa/assetresponseqwen.md`) |
 
 **Test run** (lokaal):
 ```bash
-# Activeer venv met dependencies
-source /tmp/testenv/bin/activate
+# Bijv. project-venv (Python 3.11+)
+source .venv-pytest/bin/activate
+export PYTHONPATH=backend/threat_designer
 
-# Alle tests
+# App / API
 pytest test/app/ -v
 
-# Alleen services
-pytest test/app/services/ -v
+# Threat-designer unit tests (o.a. add_threats-coercion, text-block parsers)
+pytest test/threat_designer/ -v
 ```
 
 Zie Sprint 7 + 7b in [`sprints.md`](../sprints.md) voor test modernisering history.
+
+**Threat agent — optionele env** (td-agent container / `workflow_threats`):
+
+- `THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS` — maximaal aantal keer dezelfde `add_threats`-schemafout in `ToolMessage`s voordat de run stopt met `ThreatModelingError` (default **3**). Voorkomt oneindige loops bij LM Studio / Qwen + strikte tool-validatie.
 
 ---
 
@@ -94,4 +103,4 @@ Zie Sprint 7 + 7b in [`sprints.md`](../sprints.md) voor test modernisering histo
 
 ---
 
-*Laatste update: 2026-03-12 | Beheerd door CoPM*
+*Laatste update: 2026-04-04 — docs sync (Sentry Vite, add_threats, pytest paths) | CoPM*

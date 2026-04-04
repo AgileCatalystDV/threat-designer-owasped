@@ -2,6 +2,12 @@
 
 This guide explains how to interact with Sentry, Threat Designer's intelligent assistant that helps you explore, analyze, and enhance your threat models through conversational AI.
 
+## threat-designer-owasped (local fork)
+
+- **Backend:** start the stack with Sentry: `npm run stack:up:full` or `docker compose -f docker-compose.local.yml --profile full up` — Sentry listens on **http://localhost:8090** (`GET /ping`, `POST /invocations`). No JWT; session headers are documented in `backend/sentry/agent.py`.
+- **Frontend (Vite):** set `VITE_SENTRY_ENABLED=true` and **`VITE_SENTRY_BASE_URL=http://localhost:8090`** in `.env.development` or `.env.local` so the UI calls the local FastAPI service instead of AWS Bedrock AgentCore. Restart `npm run dev`.
+- **Details:** [`quick-start-guide/local-stack-owasped.md`](./local-stack-owasped.md) section **4.3**.
+
 ## What is Sentry?
 
 Sentry is your AI-powered security analyst that understands your entire threat model and can help you:

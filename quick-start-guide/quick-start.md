@@ -8,9 +8,9 @@ Welcome to Threat Designer, an AI-powered agentic application for automated thre
 
 Voor **lokale Docker**, **rooktest**, en het werkproces **virtuele agent (Cursor) → daarna lokale Qwen/Ollama**:
 
-→ **[Lokale stack & rooktest](./local-stack-owasped.md)**
+→ **[Lokale stack & rooktest](./local-stack-owasped.md)** (inclusief **Sentry**: Docker-profiel `full` + Vite `VITE_SENTRY_BASE_URL`)
 
-De overige guides hieronder zijn grotendeels **upstream** (AWS / algemene UI); voor stack-beslissingen en no-auth zie ook [`../docs/README.md`](../docs/README.md) en [`../sprints.md`](../sprints.md).
+De overige guides hieronder zijn grotendeels **upstream** (AWS / algemene UI); voor stack-beslissingen en no-auth zie ook [`../docs/README.md`](../docs/README.md) en [`../sprints.md`](../sprints.md). Voor **Sentry** in deze fork: begin bij [`local-stack-owasped.md`](./local-stack-owasped.md) §4.3, daarna [`using-sentry.md`](./using-sentry.md).
 
 ---
 

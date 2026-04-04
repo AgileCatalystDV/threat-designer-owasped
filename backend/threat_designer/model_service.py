@@ -1,5 +1,6 @@
 """Model service layer for centralized model interactions."""
 
+import json
 import os
 from typing import Any, Dict, List, Optional, Type
 
@@ -13,8 +14,56 @@ from langchain_aws.chat_models.bedrock import ChatBedrockConverse
 from langchain_core.messages import AIMessage
 from langchain_core.messages.human import HumanMessage
 from langchain_core.runnables.config import RunnableConfig
+from asset_text_parser import parse_assets_list_from_text
+from flows_text_parser import parse_flows_list_from_text
 from monitoring import logger, with_error_context
-from utils import handle_asset_error
+from gap_analysis_text_parser import parse_continue_threat_modeling_from_text
+from state import AssetsList, ContinueThreatModeling, FlowsList, ThreatsList
+from threats_text_parser import parse_threats_list_from_text
+from utils import extract_text_from_base_message, handle_asset_error, sanitize_tool_invocation_args
+
+# Max characters per field in debug logs (override via LLM_DEBUG_RESPONSE_MAX_CHARS)
+_LLM_DEBUG_MAX_DEFAULT = 4000
+
+
+def _log_llm_response_debug(
+    response: AIMessage,
+    *,
+    step: str,
+    model_type: str,
+) -> None:
+    """Log raw LLM output at DEBUG (set LOG_LEVEL=DEBUG on the threat-designer service)."""
+    max_chars = int(os.environ.get("LLM_DEBUG_RESPONSE_MAX_CHARS", str(_LLM_DEBUG_MAX_DEFAULT)))
+    tc = getattr(response, "tool_calls", None) or []
+    tc_preview = json.dumps(tc, ensure_ascii=False) if tc else "[]"
+    _tc_len = len(tc_preview)
+    if _tc_len > max_chars:
+        tc_preview = tc_preview[:max_chars] + f"...(truncated, total_len={_tc_len})"
+
+    c = getattr(response, "content", None)
+    if isinstance(c, str):
+        content_preview = c
+    elif isinstance(c, list):
+        content_preview = json.dumps(c, ensure_ascii=False)
+    else:
+        content_preview = str(c)
+    content_preview = content_preview.strip()
+    _cp_len = len(content_preview)
+    if _cp_len > max_chars:
+        content_preview = (
+            content_preview[:max_chars] + f"...(truncated, total_len={_cp_len})"
+        )
+
+    ak = getattr(response, "additional_kwargs", None) or {}
+    logger.debug(
+        "llm_raw_response",
+        step=step,
+        model_type=model_type,
+        tool_call_count=len(tc),
+        tool_calls_json=tc_preview,
+        message_content_preview=content_preview,
+        additional_kwargs_keys=list(ak.keys()) if isinstance(ak, dict) else [],
+    )
 
 
 class ModelService:
@@ -91,6 +140,9 @@ class ModelService:
 
         try:
             response = model_with_tools.invoke(messages)
+            _log_llm_response_debug(
+                response, step="invoke_structured_model", model_type=model_type
+            )
             return self._process_structured_response(
                 response, tools[0], model_structured, reasoning
             )
@@ -127,7 +179,63 @@ class ModelService:
 
         @handle_asset_error(model_structured, tool_class, thinking=reasoning)
         def process_response(resp):
-            return tool_class(**resp.tool_calls[0]["args"])
+            calls = getattr(resp, "tool_calls", None) or []
+            if calls:
+                try:
+                    raw_args = calls[0].get("args")
+                    if raw_args is not None:
+                        args = sanitize_tool_invocation_args(raw_args)
+                        return tool_class(**args)
+                except Exception:
+                    if tool_class not in (
+                        AssetsList,
+                        FlowsList,
+                        ThreatsList,
+                        ContinueThreatModeling,
+                    ):
+                        raise
+            if tool_class is AssetsList:
+                text = extract_text_from_base_message(resp)
+                parsed = parse_assets_list_from_text(text)
+                if parsed is not None:
+                    logger.info(
+                        "assets_plain_text_fallback",
+                        asset_count=len(parsed.assets),
+                    )
+                    return parsed
+            if tool_class is FlowsList:
+                text = extract_text_from_base_message(resp)
+                parsed = parse_flows_list_from_text(text)
+                if parsed is not None:
+                    logger.info(
+                        "flows_plain_text_fallback",
+                        data_flow_count=len(parsed.data_flows),
+                        trust_boundary_count=len(parsed.trust_boundaries),
+                        threat_source_count=len(parsed.threat_sources),
+                    )
+                    return parsed
+            if tool_class is ThreatsList:
+                text = extract_text_from_base_message(resp)
+                parsed = parse_threats_list_from_text(text)
+                if parsed is not None:
+                    logger.info(
+                        "threats_plain_text_fallback",
+                        threat_count=len(parsed.threats),
+                    )
+                    return parsed
+            if tool_class is ContinueThreatModeling:
+                text = extract_text_from_base_message(resp)
+                parsed = parse_continue_threat_modeling_from_text(text)
+                if parsed is not None:
+                    logger.info(
+                        "gap_analysis_plain_text_fallback",
+                        stop=parsed.stop,
+                        rating=parsed.rating,
+                    )
+                    return parsed
+            raise ValueError(
+                f"No valid tool_calls or parseable plain text for {tool_class.__name__}"
+            )
 
         return {
             "structured_response": process_response(response),
@@ -148,7 +256,11 @@ class ModelService:
 
         try:
             response = model_with_tools.invoke(messages)
-            return tools[0](**response.tool_calls[0]["args"])
+            _log_llm_response_debug(
+                response, step="generate_summary", model_type="model_summary"
+            )
+            args = sanitize_tool_invocation_args(response.tool_calls[0]["args"])
+            return tools[0](**args)
         except Exception as e:
             error_str = str(e)
             logger.error("Summary generation failed", error=error_str)

@@ -25,7 +25,7 @@ Gedetailleerde skills per persona: [`docs/team/personas.md`](../docs/team/person
 
 ## CoPM — Review & stand van zaken (SVZ)
 
-**Kort:** Sprints 1–7b zijn afgerond (infra, FastAPI, tests gemoderniseerd). De **lokale stack** (`docker-compose.local.yml`) is de bron van waarheid; **frontend** draait met Vite naast Docker. Rooktest + echte gebruikersflows worden nu **stap voor stap** hard gemaakt (DynamoDB-poort in netwerk, env voor tabellen/CORS, `restore`-fouten, enz.).
+**Kort:** Sprints 1–7b zijn afgerond (infra, FastAPI, tests gemoderniseerd). De **lokale stack** (`docker-compose.local.yml`) is de bron van waarheid; **frontend** draait met Vite naast Docker. Rooktest + echte gebruikersflows worden nu **stap voor stap** hard gemaakt (DynamoDB-poort in netwerk, env voor tabellen/CORS, `restore`-fouten, enz.). **Retro 2026-03-22:** LeadPM-besluit H1–H5 en P2–P4 vastgelegd in [`docs/team/retro-hitl-2026-03.md`](../docs/team/retro-hitl-2026-03.md); **CoPM akkoord** — verder bouwen met respect, zonder shadow IT / overeager assistentie.
 
 **QA — volgende versnelling:** naast **unit/property-tests** expliciet **functionele tests** laten vastleggen: kritieke user journeys (submit → processing → resultaat, lock, restore waar van toepassing), liefst als **checklist** in docs of lichte **E2E** later (Playwright/Cypress) wanneer LeadPM dat goedkeurt. Geen vervanging van handmatige rooktest op Intel Mac + Docker — **aanvulling**.
 
@@ -36,10 +36,16 @@ Gedetailleerde skills per persona: [`docs/team/personas.md`](../docs/team/person
 ## Spelregels
 
 - **Plan altijd eerst** — samenvatten wat het plan is + motivatie, wachten op LeadPM goedkeuring
-- **Niet overeagerly** — grote autonomie, maar vertrouwen gaat voor snelheid
+- **Niet overeagerly** — grote autonomie, maar vertrouwen gaat voor snelheid; geen stille scope-uitbreiding of “extra” coding/assistentie buiten afgesproken werk
 - **Kleine stappen** — werkende increments, iterate, geen big-bang deployments
 - **Chirurgische precisie** — raak business logic niet aan tenzij noodzakelijk
 - **Co-creatie** — relationele samenwerking, wederzijds respect
+- **Samenvatting vóór uitvoer** — bij grotere wijzigingen eerst kort *wat* en *waarom* (transparantie; zie retro H5)
+- **Geen shadow IT** — besluiten en wijzigingen horen in **repo & docs** (`sprints.md`, PR’s, commits); geen parallelle onzichtbare routes of stacks buiten de afgesproken basis
+- **HITL / gates** — geen druk om gates te overslaan; bij tijdsdruk: **scope verkleinen**, niet de gate omzeilen
+- **Transparantie scope** — taak wordt groter dan verwacht → **stop + meld** aan LeadPM met opties
+
+**Retro & verbetering:** periodiek HITL/proces — [`docs/team/retro-hitl-2026-03.md`](../docs/team/retro-hitl-2026-03.md) (besluiten 2026-03-22: H1–H4 actief; H5 via bovenstaande bullets).
 
 ---
 
@@ -51,7 +57,7 @@ Gedetailleerde skills per persona: [`docs/team/personas.md`](../docs/team/person
 3. Persona's werken hun deel uit, rapporteren blockers
 4. Sprint afgesloten in [`sprints.md`](../sprints.md) met Definition of Done
 
-**Huidige focus** (zie `sprints.md`): lokale Docker-rooktest; **hier in Cursor** prompts/flows scherp krijgen; **echte model-Q/A zelf** via Ollama/Qwen op de host (KISS — geen MCP-backloop). **Geen auth** tot LeadPM de rooktest-gate akkoord geeft.
+**Huidige focus** (zie `sprints.md` → **Sprint 8**): lokale dev-workflow docs + **Playwright UI-smoke** (naast checklist); Docker-rooktest blijft; **echte model-Q/A** via Ollama op host (KISS — geen MCP-backloop). **Geen auth** tot LeadPM de gate akkoord geeft.
 
 ### Communicatienorm
 - Acties presenteren per persona ("Dev doet X, DevOps doet Y")
@@ -68,7 +74,9 @@ Gedetailleerde skills per persona: [`docs/team/personas.md`](../docs/team/person
 | [`sprints.md`](../sprints.md) | Sprint history, taken, Definition of Done |
 | [`docs/README.md`](../docs/README.md) | Overzicht van alle documentatie |
 | [`docs/team/personas.md`](../docs/team/personas.md) | Skills matrix per persona |
+| [`docs/team/retro-hitl-2026-03.md`](../docs/team/retro-hitl-2026-03.md) | **Retro & HITL** — tussentijdse review, proces/spelregels, feedbackronde |
 | [`docs/qa/README.md`](../docs/qa/README.md) | QA-index + link naar [`functional-checklist.md`](../docs/qa/functional-checklist.md) |
+| [`docs/tooling/cursor-composer.md`](../docs/tooling/cursor-composer.md) | **Cursor Composer 2** (officiële docs) vs **lokale** Ollama/stack — geen verwarring |
 | [`quick-start-guide/local-stack-owasped.md`](../quick-start-guide/local-stack-owasped.md) | **Lokale Docker rooktest**, virtuele agent (Cursor) → daarna Qwen/Ollama |
 | [`quick-start-guide/quick-start.md`](../quick-start-guide/quick-start.md) | Upstream quick-start index |
 | [`.cursor/rules/`](../.cursor/rules/) | Cursor AI coding rules |

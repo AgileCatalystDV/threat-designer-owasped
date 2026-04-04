@@ -16,27 +16,27 @@ alwaysApply: false
 | minio | 9000:9000 | S3 API |
 | minio-console | 9001:9001 | MinIO beheer UI |
 
-## Standaard environment variabelen (backend)
+## LLM / inference (`threat-designer`, `sentry`)
 
-```yaml
-environment:
-  - DYNAMODB_ENDPOINT=http://dynamodb-local:8000
-  - S3_ENDPOINT=http://minio:9000
-  - S3_ACCESS_KEY=minioadmin
-  - S3_SECRET_KEY=minioadmin
-  - INFERENCE_BASE_URL=http://host.docker.internal:11434/v1  # Ollama
-  - INFERENCE_API_KEY=local
-  - LOCAL_MODEL=qwen3:32b
-  - AUTH_MODE=local
-  - ENABLE_SENTRY=false
-```
+`INFERENCE_BASE_URL`, `INFERENCE_API_KEY`, `MODEL_PROVIDER`, `LOCAL_MODEL` komen uit **`.env.local`** — **niet** hardcoden in `docker-compose.local.yml` (overschrijft anders `env_file`).
 
-## Ollama op macOS
+**Sentry in de browser (Vite):** `VITE_SENTRY_ENABLED=true` + `VITE_SENTRY_BASE_URL=http://localhost:8090` in `.env.development` of `.env.local` (projectroot); stack met profiel `full` zodat `td-sentry` draait. Zie `quick-start-guide/local-stack-owasped.md` §4.3.
 
-Ollama draait **buiten Docker** voor Apple Silicon Metal GPU access:
+## Threat agent (optioneel)
+
+`THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS` (default 3) — abort bij herhaalde `add_threats` tool-schemafout; zie `docs/README.md` / `add_threats_tool_args.py`.
+
+Voorbeelden (zie `.env.local.example`):
+
+- Ollama op host: `http://host.docker.internal:11434/v1`
+- LM Studio op LAN: `http://192.168.x.x:1234/v1` (OpenAI-compat; base eindigt op `/v1`)
+
+## Ollama op macOS (optioneel)
+
+Ollama draait **buiten Docker** voor o.a. Apple Silicon GPU:
 ```bash
 brew install ollama && ollama serve
-# In docker-compose: gebruik host.docker.internal:11434
+# .env.local: INFERENCE_BASE_URL=http://host.docker.internal:11434/v1
 ```
 
 ## MinIO bucket initialisatie
