@@ -14,6 +14,7 @@
 |----------|--------------|
 | [**functional-checklist.md**](functional-checklist.md) | **Actief** — handmatig afvinken: happy paths + bekende foutpaden |
 | [`*.md` in deze map](.) | Optionele **QA-captures** (request/response dumps, LLM-logs) — ter referentie; geen vervanging voor pytest |
+| [assetresponsegemma4.md](assetresponsegemma4.md) | Gemma 4: `[TOOL_REQUEST]` + JSON `AssetsList` — unit test: `test_structured_tool_json_gemma.py` |
 | (later) E2E | Optioneel Playwright — alleen na KISS-checklist stabiel |
 
 ## Basis

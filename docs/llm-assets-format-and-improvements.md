@@ -91,4 +91,9 @@ Sommige modellen zetten intros **vóór** de gestructureerde payload. Als de ruw
 - **Zonder** deze markers: gedrag ongewijzigd t.o.v. de bestaande Qwen/tekst-fallbacks (`parse_*_from_text`).
 - Implementatie: `backend/threat_designer/tool_request_markers.py`, aangeroepen vanuit `model_service._process_structured_response` vóór `parse_assets_list_from_text` / flows / threats / gap.
 
+### JSON tool-wrapper (Gemma / LM Studio)
+
+Na marker-normalisatie kan de inhoud **JSON** zijn in de vorm ``{"name": "AssetsList", "arguments": {"assets": [...]}}`` (OpenAI-tool-stijl). ``structured_tool_json`` + ``parse_assets_list_from_text`` valideren dat via Pydantic. Bekende typo: verkeerde key ``"、name"`` → wordt gerepareerd vóór ``json.loads``. Zie ``docs/qa/assetresponsegemma4.md`` en ``test_structured_tool_json_gemma.py``.
+
+Zelfde patroon voor **FlowsList** en **ThreatsList** in ``flows_text_parser`` / ``threats_text_parser`` (tool-naam ``FlowsList`` / ``ThreatsList``, ``arguments`` met de verwachte velden).
 
