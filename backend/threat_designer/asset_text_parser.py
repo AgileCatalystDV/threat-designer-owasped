@@ -17,12 +17,16 @@ from structured_tool_json import tool_arguments_if_name, try_parse_json_object
 
 def parse_assets_list_from_text(text: str) -> Optional[AssetsList]:
     """
-    Parse prompt-style asset blocks into AssetsList.
+    Build ``AssetsList`` from assistant plain text (no ``tool_calls``).
 
-    Also accepts JSON tool payloads: ``{"name": "AssetsList", "arguments": {"assets": [...]}}``
-    or ``{"assets": [...]}`` (e.g. inside ``[TOOL_REQUEST]`` … ``[END_TOOL_REQUEST]``).
+    **Order (backwards compatible):**
 
-    Returns None if no valid blocks are found or all rows fail validation.
+    1. **JSON** — full string or first balanced ``{...}`` (see ``structured_tool_json``):
+       ``{"name": "AssetsList", "arguments": {"assets": [...]}}`` or ``{"assets": [...]}``.
+       If JSON is present but invalid for ``AssetsList``, step 2 still runs.
+    2. **Prompt blocks** — ``Type:`` / ``Name:`` / ``Description:`` / ``Criticality:`` (legacy Qwen etc.).
+
+    Returns ``None`` if nothing parses.
     """
     j = try_parse_json_object(text)
     if j:

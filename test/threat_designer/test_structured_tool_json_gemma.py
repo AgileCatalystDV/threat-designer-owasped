@@ -73,3 +73,17 @@ def test_threats_list_tool_json_projection():
     assert len(tl.threats) == 1
     assert tl.threats[0].name == "Test Spoof"
     assert tl.threats[0].stride_category == "Spoofing"
+
+@pytest.mark.unit
+def test_try_parse_json_object_balanced_with_trailing_garbage():
+    """Na eerste ``}`` mag tekst volgen; backwards compatible met strikt JSON."""
+    from structured_tool_json import try_parse_json_object
+
+    blob = (
+        '{"name": "AssetsList", "arguments": {"assets": []}}'
+        " and ignore this"
+    )
+    d = try_parse_json_object(blob)
+    assert d is not None
+    assert d.get("name") == "AssetsList"
+

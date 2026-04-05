@@ -84,3 +84,48 @@ def test_extract_assetresponseqwen_answer_section_count():
     types = [r["type"] for r in rows]
     assert types.count("Asset") == 5
     assert types.count("Entity") == 4
+
+@pytest.mark.unit
+def test_parse_assets_list_from_text_plain_blocks_backwards_compatible():
+    """Type:/Name: pad blijft primair als er geen geldig JSON-object is."""
+    from asset_text_parser import parse_assets_list_from_text
+
+    al = parse_assets_list_from_text(SAMPLE_TWO_BLOCKS)
+    assert al is not None
+    assert len(al.assets) == 2
+    assert al.assets[0].name == "Database"
+    assert al.assets[1].type == "Entity"
+
+
+@pytest.mark.unit
+def test_parse_assets_list_json_with_leading_prose():
+    """Eerste gebalanceerde JSON na ruis (zelfde payload als tool-wrapper)."""
+    from asset_text_parser import parse_assets_list_from_text
+
+    core = (
+        '{"name": "AssetsList", "arguments": {"assets": ['
+        '{"type": "Asset", "name": "X", "description": "d", "criticality": "High"}'
+        "]}}"
+    )
+    wrapped = "Here is the output.\n\n" + core + "\n\nThanks."
+    al = parse_assets_list_from_text(wrapped)
+    assert al is not None
+    assert len(al.assets) == 1
+    assert al.assets[0].name == "X"
+
+
+@pytest.mark.unit
+def test_parse_assets_list_plain_text_unaffected_by_brace_in_description():
+    """Beschrijving met accolades: nog steeds Type:-extractie als geen JSON root."""
+    from asset_text_parser import parse_assets_list_from_text
+
+    text = """
+Type: Asset
+Name: Config
+Description: JSON-like {not: valid} but not a root object at start.
+Criticality: Low
+"""
+    al = parse_assets_list_from_text(text)
+    assert al is not None
+    assert al.assets[0].name == "Config"
+
