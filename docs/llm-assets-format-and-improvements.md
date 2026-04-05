@@ -81,3 +81,14 @@ Prioriteit en planning: **LeadPM / CoPM**; technische uitvoering **Dev** (agent)
 ---
 
 *Toegevoegd: 2026-04-04 — backlog kan in `sprints.md` worden opgenomen bij een sprint of als aparte follow-up.*
+
+---
+
+## Optioneel: `[TOOL_REQUEST]` … `[END_TOOL_REQUEST]` (kleine modellen)
+
+Sommige modellen zetten intros **vóór** de gestructureerde payload. Als de ruwe `content` het volgende patroon bevat, gebruikt `tool_request_markers.normalize_text_for_structured_fallback` alleen het segment **tussen** de markers (exacte strings: `[TOOL_REQUEST]` en `[END_TOOL_REQUEST]`). Alles ervoor en erna wordt niet aan de plain-text parsers gegeven.
+
+- **Zonder** deze markers: gedrag ongewijzigd t.o.v. de bestaande Qwen/tekst-fallbacks (`parse_*_from_text`).
+- Implementatie: `backend/threat_designer/tool_request_markers.py`, aangeroepen vanuit `model_service._process_structured_response` vóór `parse_assets_list_from_text` / flows / threats / gap.
+
+
