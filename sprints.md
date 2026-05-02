@@ -18,18 +18,20 @@
 | Sprint 6 | Sentry AI Assistant (lokaal) | ✅ Afgerond | 2026-03-12 |
 | Sprint 7 | Testcode Modernisering | ✅ Afgerond | 2026-03-12 |
 | Sprint 7b | Test Failure Fixes | ✅ Afgerond | 2026-03-12 |
-| **Sprint 8** | **Lokale dev-scripts + UI smoke (Playwright)** | 🔄 In uitvoering | — |
+| **Sprint 8** | **Playwright smoke + agent/LM-hardening + LAN LM Studio (integratie)** | 🔄 In uitvoering | — |
+| **Sprint 9** | **Playwright met gesmockte LLM-responses (captures; meerdere modellen)** | 📋 Gepland — start na LeadPM-go op scope Sprint 9 | — |
 | **Backlog** | **Relationele DB (PostgreSQL of MySQL) i.p.v. DynamoDB** | 📋 Toekomst — geen start zonder LeadPM-go | — |
 
-### Huidige focus (Sprint 8 — gestart)
+### Huidige focus (Sprint 8)
 
-**Status: in uitvoering** — zie [**Sprint 8**](#sprint-8--lokale-dev-scripts--ui-smoke-playwright) (PVA DevOps + QA).
+**Status: in uitvoering** — zie [**Sprint 8**](#sprint-8--lokale-dev-scripts--ui-smoke-playwright) (PVA + resterende increment + LM Studio / LAN).
 
-- **Lokale stack**: `docker compose` / `npm run stack:up` + rooktest. **Gids:** [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md).
-- **Cursor (hier)**: co-creatief prompts/flows — géén vervanging voor pytest/E2E.
-- **Model vraag/antwoord (zelf)**: Ollama op host — **KISS:** geen MCP-backloop naar Cursor-intern model.
-- **Geen authenticatie (Cognito/JWT)** tot LeadPM de rooktest-/E2E-gate akkoord geeft.
-- OWASP LLM Top 10 STRIDE-templates **na** stabiele lokale basis + Sprint 8 smoke.
+- **Al gemerged:** Playwright smoke, QA-docs, LLM-pipeline-navigatiedoc — zie PVA-taken (afgevinkt).
+- **Nog te committen / PR:** resterende lokale wijzigingen (LangGraph pins, parsers, logging, tests) — als taken onder **§ Sprint 8 — resterende increment**; kwaliteit **gecontroleerd** (pytest subset groen, geen `print` in productiepad waar gemigreerd).
+- **Integratie LM Studio op LAN:** `.env.local` → `INFERENCE_BASE_URL=http://<host>:1234/v1` (OpenAI-compat); stack gebruikt `extra_hosts: host.docker.internal` — verder **afstemmen** hoe request/response vast te leggen voor toekomstige **volledige** Playwright-scenario’s (zie onder Sprint 8 en Sprint 9).
+- **Lokale stack:** [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md) · model **in het netwerk**: zelfde doc (LM Studio-sectie).
+- **Geen authenticatie (Cognito/JWT)** tot LeadPM de gate akkoord geeft.
+- OWASP LLM Top 10 STRIDE-templates **na** stabiele basis + afgesproken teststrategie (Sprint 8/9).
 
 #### QA — functionele testen ✅ checklist + Sprint 8 automatisering
 
@@ -37,12 +39,13 @@
 - **Geautomatiseerd (Sprint 8)**: Playwright-smoke tegen UI (`localhost:5173`), eerste scope **zonder** zware LLM-flow; CI-optioneel.
 - **Koppeling**: rooktest = technische basis; checklist = product-laag; Playwright = **regressie/smoke** bovenop.
 
-### Planning check (team) — 2026-04-04
+### Planning check (team) — 2026-05-02
 
 | Onderdeel | Stand |
 |-----------|--------|
 | **Sprint 1–7** | ✅ Afgerond (zie tabel hierboven). |
-| **Sprint 8** | 🔄 **Actief** — **S8-D01** + **S8-Q01–Q04** ✅ (Playwright + smoke + `test:e2e` + checklist); **S8-D02–D03** (optionele README/CI) open — zie § Sprint 8. |
+| **Sprint 8** | 🔄 **Actief** — Playwright-PVA ✅ (gemerged); **rest-increment** (LangGraph/parsers/logging/tests) lokaal klaar → **commit/PR**; **S8-D02–D03** optioneel; **LM Studio/LAN + volledig scenario** in afstemming (LeadPM); zie § Sprint 8. |
+| **Sprint 9** | 📋 **Gepland** — Playwright tegen **gemockte** OpenAI-compat responses o.b.v. **echte captures**; ondersteuning **meerdere modellen** — zie [§ Sprint 9](#sprint-9--playwright--gemockte-llm-captures-meerdere-modellen). |
 | **LLM / assets (lokale modellen)** | Geen aparte sprint; **verwacht formaat + backlog** vastgelegd in [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md). Opvolging: **LeadPM-prioriteit** — kan door **Dev** parallel aan Sprint 8, **niet** blokkerend voor S8-smoke. |
 | **Auth / OWASP LLM Top 10 templates** | Zoals eerder: **na** stabiele rooktest + Sprint 8-gate (zie huidige focus hierboven). |
 | **Docs / repo (2026-04-04)** | Sync: Sentry **Vite** (`VITE_SENTRY_BASE_URL`), `add_threats` coercion + `THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS`, pytest-paden `test/threat_designer/`, QA-notes onder `docs/qa/`. |
@@ -577,9 +580,74 @@ Sprint 1 taken **S1-01 … S1-05** hebben de AWS-touchpoints in kaart gebracht; 
 | **QA** | Playwright-scope, selectors, documentatie `test:e2e`. |
 | **LeadPM** | Go/no-go na eerste groene smoke + bestaande rooktest/checklist. |
 
+### Sprint 8 — resterende increment (lokaal, nog te committen)
+
+> **Doel één PR (of opgesplitst):** agent/parsing robuustheid, logging-consistentie, QA-captures.  
+> **Verificatie 2026-05-02:** `pytest test/threat_designer/test_flows_text_blocks.py test/threat_designer/test_structured_tool_json_gemma.py test/threat_designer/test_tool_request_markers.py` → **20 passed**.
+
+| # | Taak | Status | Notities |
+|---|------|--------|----------|
+| S8-INC-01 | **LangGraph** — `langgraph==1.0.10` + `langgraph-prebuilt==1.0.8` in `backend/threat_designer/requirements.txt` en `backend/sentry/requirements.txt` (import `ExecutionInfo` / prebuilt-compatibility) | [x] | containers: rebuild `threat-designer` / `sentry` na merge |
+| S8-INC-02 | **FlowsList fallback** — `slice_from_last_gemma_channel_tool_request` in `model_service.py` + uitbreiding `tool_request_markers.py` | [x] | |
+| S8-INC-03 | **`flows_text_parser.py`** — uitgebreidere flow-parse / edge cases | [x] | samen met tests |
+| S8-INC-04 | **Klein** — `tools.py`, `attack_tree_models.py` | [x] | |
+| S8-INC-05 | **FastAPI service** — `threat_designer_service.py`: `print` → `LOG` / `LOG.exception` | [x] | align met [`docs/logging.md`](docs/logging.md) |
+| S8-INC-06 | **MCP** — `mcp-server/.../server.py`: poll-fout via `logger` i.p.v. `print` | [x] | |
+| S8-INC-07 | **`scripts/init_dynamo.py`** — `print` → `logging` + `basicConfig` | [x] | init-container logs consistenter |
+| S8-INC-08 | **Tests** — bovenstaande modules gedekt in `test/threat_designer/*` | [x] | 20 tests groen (zie boven) |
+| S8-INC-09 | **QA docs** — o.a. `docs/qa/dataflowresonseqwen.md`, `tmmodelthreatsthinkinghangsqwen.md`, wijzigingen `assetresponsegemma4.md`; **nieuw** `docs/qa/dataflowresponsegemma4.md` toevoegen bij commit | [x] | referentie / regressie — geen vervanging van pytest |
+
+**Actie:** `git add` + commit + push; optioneel **twee PR’s** (core code vs docs-captures) als review lichter moet.
+
+### Integratie LM Studio (LAN) — afstemming Sprint 8
+
+| Onderwerp | Afspraak / vervolg |
+|-----------|-------------------|
+| **Config** | Host op LAN: `INFERENCE_BASE_URL=http://<ip>:1234/v1` in `.env.local` (OpenAI-compat; base eindigt op `/v1`). Al gedocumenteerd in local-stack (LM Studio-sectie). |
+| **Request/response vastleggen** | Voor toekomstige **volledige** E2E: sparren over **contract** (welke endpoints, welke stappen in UI) + of **harde files** (JSON captures) in repo onder `docs/qa/` of `test/fixtures/llm/` — **geen** verplichting in Sprint 8-DoD; input voor **Sprint 9** mocks. |
+| **Playwright “volledig scenario”** | Alleen zinvol met stabiele **stack** (8000/8080) + bereikbare inference; lange loops/flaky — **Sprint 9** lost voornamelijk op via **mocks**; desgewenst **één** `@slow` of handmatige checklist in Sprint 8. |
+
+### Open punten — primaat LeadPM (kort)
+
+1. **Sprint 8 afronden:** is **één gezamenlijke PR** met code + QA-md’s akkoord, of **splitsen** (code vs captures)?  
+2. **LM Studio E2E:** willen we in Sprint 8 al een **niet-gemockte** “happy path”-run in Playwright, of **alleen** documenteren + **Sprint 9** = determinisme via mocks?  
+3. **CI:** Playwright job (**S8-D03**) nog **optioneel** — opnemen in Sprint 8-close of expliciet verschuiven naar Sprint 9?
+
 ### Backlog — LLM assets (niet in Sprint 8 DoD)
 
 Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md) (prompt/tool-uitlijning, `tool_choice`, fallbacks, tests). Geen verplichte S8-taken; wel input voor een vervolgsprint of incrementele PR’s.
+
+<a id="sprint-9--playwright--gemockte-llm-captures-meerdere-modellen"></a>
+
+## Sprint 9 — Playwright + gemockte LLM (captures, meerdere modellen)
+
+**Status:** 📋 Gepland — start na **LeadPM-go** op onderstaande scope (kan overlappen met afronden Sprint 8-close).
+
+### Doel
+
+- **Deterministische** UI-/integratietests voor **volledige** threat-model-flows **zonder** live Ollama/LM Studio in CI — responses komen uit **vastgelegde** OpenAI-compat payloads (**captures** van echte runs).
+- **Meerdere modellen** ondersteunen: zelfde scenario, verschillende fixture-sets (bijv. Qwen vs Gemma vs …) via manifest of directory-per-model.
+
+### Conceptuele bouwstenen (voor ontwerp / spike)
+
+| Bouwsteen | Richting |
+|-----------|----------|
+| **Capture** | Export van `/v1/chat/completions`-achtige JSON (of agent-trail) na echte LM Studio-run — versie + model-id in metadata. |
+| **Mock-laag** | Opties (kiezen in spike): **Playwright `page.route()`** naar lokale fixture-files; kleine **stub HTTP-server** in test-setup; of **MSW** alleen als past bij Vite-test-setup — voorkeur: **minimaal**, reproduceerbaar, geen tweede “waarheid” naast Compose. |
+| **Playwright** | Scenario-steps: upload → start job → poll UI/state **tot vast punt**; assertions op DOM + evt. netwerk **naar gemockte inference** (containers blijven mogelijk voor API/Dynamo/MinIO). |
+| **Multi-model** | Map bv. `e2e/fixtures/llm/<model-id>/completion-*.json` + parameter in test of matrix in CI. |
+
+### Taken (nog niet gestart — checklist voor sprintstart)
+
+- [ ] **S9-01** Spike-document (1–2 pagina’s): gekozen mock-strategie + waar captures in repo landen.
+- [ ] **S9-02** Eén **pad-van-de-waarheid** capture uit LM Studio (LAN) documenteren in [`docs/qa/README.md`](docs/qa/README.md) of dunne `docs/qa/playwright-llm-fixtures.md`.
+- [ ] **S9-03** Implementatie eerste **mocked** Playwright-spec (één model).
+- [ ] **S9-04** Tweede fixture-set (**ander model**) — bewijst dat multi-model werkt.
+- [ ] **S9-05** Optioneel: CI-job alleen mocked-E2E (snel, geen GPU/no inference).
+
+### Afhankelijkheden
+
+- Sprint 8: stabiele **commit** van agent/parsers + duidelijke **contract**-afbakening voor welke responses gemocked worden.
 
 <a id="backlog-rdbms"></a>
 
@@ -603,4 +671,4 @@ Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-im
 
 ---
 
-*Bijgehouden door CoPM — laatste update: Sprint 8 Playwright smoke merged (2026-05-02); eerdere repo-validatie (2026-05-02); relationele DB-backlog + planning check (2026-04-04); Sprint 8 PVA oorsprong (2026-03-12)*
+*Bijgehouden door CoPM — laatste update: Sprint 8 increment + Sprint 9 stub + LM Studio-afstemming (2026-05-02); Playwright smoke merged (2026-05-02); relationele DB-backlog + planning check (2026-04-04); Sprint 8 PVA oorsprong (2026-03-12)*
