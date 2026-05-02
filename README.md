@@ -34,6 +34,8 @@ Lightning Mode provides:
 ### threat-designer-owasped — lokale Docker-stack (fork)
 
 - **Gids:** [Lokale stack & rooktest](./quick-start-guide/local-stack-owasped.md)
+- **LLM-flow:** [Threat modeling — pipeline, routes & fasen](./docs/threat-modeling-llm-pipeline.md) · index: [docs/README.md](./docs/README.md)
+- **E2E-smoke (Sprint 8):** `npx playwright install chromium` (eenmalig) · `npm run test:e2e` — zie [`docs/qa/README.md`](./docs/qa/README.md)
 - **Env:** `cp .env.local.example .env.local`
 - **Start:** `npm run stack:up` (API + agent + storage) · `npm run stack:up:full` (+ Sentry op :8090)
 - **Sentry in de browser:** Vite `VITE_SENTRY_ENABLED=true` + `VITE_SENTRY_BASE_URL=http://localhost:8090` (zie local-stack §4.3)

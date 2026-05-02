@@ -14,6 +14,12 @@ testuser.json
 # testing
 /coverage
 /.hypothesis/
+/playwright-report/
+/test-results/
+/blob-report/
+
+# Python (local venv for pytest / tooling)
+/.venv
 
 # production
 /build

@@ -10,6 +10,7 @@
 | Document | Beschrijving |
 |----------|-------------|
 | [**Lokale stack & rooktest**](../quick-start-guide/local-stack-owasped.md) | Docker Compose, `.env.local.example` → `.env.local`, `npm run stack:up` / `stack:up:full` (Sentry), Vite + `VITE_SENTRY_BASE_URL` voor assistent-UI, curl-checks |
+| [**Logging** (logs lezen, `LOG_LEVEL`)](logging.md) | `docker compose … logs`, threat-designer `DEBUG`, geen `print()` in appcode |
 | [Quick Start index](../quick-start-guide/quick-start.md) | Upstream guides-index + link naar lokale fork-doc |
 | [Project Goal](../src/projectgoal.md) | Volledige projectvisie, tech spec, OWASP plan |
 | [Sprints](../sprints.md) | Sprint history, taken, Definition of Done, huidige focus; backlog o.a. [relationele DB](sprints.md#backlog-rdbms) (Postgres/MySQL, chirurgisch) |
@@ -42,6 +43,7 @@
 | [Lock Mechanism](lock_mechanism.md) | Optimistic locking voor concurrent editing | Actueel |
 | [Sentry Design](sentry_design.md) | AI agent orchestratie (Sentry service, poort 8090) | Actueel |
 | [Threat Designer Agent](threat_designer_agent.md) | LLM agent loop, STRIDE analyse, threat generatie; `add_threats`-normalisatie vóór `ToolNode` + abort bij herhaalde schema-fouten | Actueel |
+| [**LLM-pipeline & fasen (fork-navigatie)**](threat-modeling-llm-pipeline.md) | API → `/invocations`, graph-fasen, tekening↔prompts, traditioneel vs agentisch, offline test/finetune-richting; aanvulling op bovenstaande | Actueel |
 | [**LLM assets — formaat & verbeteringen**](llm-assets-format-and-improvements.md) | Verwacht tool/JSON-formaat vs. prompt-tekst; backlog (lokale modellen, fallbacks) | Actueel |
 
 > ¹ **Auth opmerking**: Cognito/JWT authenticatie is uitgeschakeld voor lokaal gebruik. `user_id` fungeert als `username`. Zie `LOCAL_USER` env var in `docker-compose.local.yml`.

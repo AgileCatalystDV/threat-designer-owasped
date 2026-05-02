@@ -18,7 +18,7 @@
 | Sprint 6 | Sentry AI Assistant (lokaal) | ✅ Afgerond | 2026-03-12 |
 | Sprint 7 | Testcode Modernisering | ✅ Afgerond | 2026-03-12 |
 | Sprint 7b | Test Failure Fixes | ✅ Afgerond | 2026-03-12 |
-| **Sprint 8** | **Lokale dev-scripts + UI smoke (Playwright)** | 🔄 Gepland | — |
+| **Sprint 8** | **Lokale dev-scripts + UI smoke (Playwright)** | 🔄 In uitvoering | — |
 | **Backlog** | **Relationele DB (PostgreSQL of MySQL) i.p.v. DynamoDB** | 📋 Toekomst — geen start zonder LeadPM-go | — |
 
 ### Huidige focus (Sprint 8 — gestart)
@@ -42,7 +42,7 @@
 | Onderdeel | Stand |
 |-----------|--------|
 | **Sprint 1–7** | ✅ Afgerond (zie tabel hierboven). |
-| **Sprint 8** | 🔄 **Actief / niet afgerond** — PVA-taken **S8-D01 … S8-Q04** en **Definition of Done** staan nog open; focus: **lokale dev-workflow + Playwright UI-smoke** (zonder zware LLM-flow in v1-E2E). |
+| **Sprint 8** | 🔄 **Actief** — **S8-D01** + **S8-Q01–Q04** ✅ (Playwright + smoke + `test:e2e` + checklist); **S8-D02–D03** (optionele README/CI) open — zie § Sprint 8. |
 | **LLM / assets (lokale modellen)** | Geen aparte sprint; **verwacht formaat + backlog** vastgelegd in [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-improvements.md). Opvolging: **LeadPM-prioriteit** — kan door **Dev** parallel aan Sprint 8, **niet** blokkerend voor S8-smoke. |
 | **Auth / OWASP LLM Top 10 templates** | Zoals eerder: **na** stabiele rooktest + Sprint 8-gate (zie huidige focus hierboven). |
 | **Docs / repo (2026-04-04)** | Sync: Sentry **Vite** (`VITE_SENTRY_BASE_URL`), `add_threats` coercion + `THREAT_AGENT_MAX_ADD_THREATS_SCHEMA_ERRORS`, pytest-paden `test/threat_designer/`, QA-notes onder `docs/qa/`. |
@@ -539,7 +539,7 @@ Sprint 1 taken **S1-01 … S1-05** hebben de AWS-touchpoints in kaart gebracht; 
 
 ## Sprint 8 — Lokale dev-scripts + UI smoke (Playwright)
 
-**Status**: 🔄 Gepland / in uitvoering  
+**Status**: 🔄 In uitvoering (QA Playwright-PR gemerged)  
 **Scope**: Na Sprint 7b — **één duidelijke lokale workflow** (DevOps) + **eerste geautomatiseerde UI-smoke** (QA), passend bij het afgesproken PVA.
 
 ### Doel
@@ -551,22 +551,22 @@ Sprint 1 taken **S1-01 … S1-05** hebben de AWS-touchpoints in kaart gebracht; 
 
 #### DevOps
 
-- [ ] **S8-D01** Korte **dev workflow** in docs: `cp .env.local.example` → `.env.local`, `npm run stack:up`, tweede terminal `npm run dev` — verwijs naar [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md) (geen tweede “waarheid” naast Compose).
+- [x] **S8-D01** Korte **dev workflow** in docs: `cp .env.local.example` → `.env.local`, `npm run stack:up`, tweede terminal `npm run dev` — verwijs naar [`quick-start-guide/local-stack-owasped.md`](quick-start-guide/local-stack-owasped.md) (geen tweede “waarheid” naast Compose).
 - [ ] **S8-D02** Optioneel: `scripts/` of root **README-sectie** “twee terminals” / link naar `package.json` `stack:*` — **KISS**, geen verplichte `concurrently` tenzij team dat wil.
 - [ ] **S8-D03** **CI**: compose blijft zoals [`.github/workflows/docker-compose.yml`](.github/workflows/docker-compose.yml); Playwright in CI **optioneel** in deze sprint (aparte job of follow-up).
 
 #### QA
 
-- [ ] **S8-Q01** **Playwright** toevoegen (`@playwright/test`), config baseren op `http://localhost:5173` (baseURL via env).
-- [ ] **S8-Q02** Minimaal **één smoke-spec**: app opent, **no-auth** pad (geen login-blokkade), assertie op root/landings-UI (stabiele selector of `getByRole` waar mogelijk).
-- [ ] **S8-Q03** `npm run test:e2e` (of `test:ui`) script + korte sectie in [`docs/qa/README.md`](docs/qa/README.md) (hoe lokaal draaien: stack + Vite verplicht).
-- [ ] **S8-Q04** [`docs/qa/functional-checklist.md`](docs/qa/functional-checklist.md): regel toevoegen dat E2E-smoke **aanvult** checklist, niet vervangt.
+- [x] **S8-Q01** **Playwright** toevoegen (`@playwright/test`), config baseren op `http://localhost:5173` (baseURL via env).
+- [x] **S8-Q02** Minimaal **één smoke-spec**: app opent, **no-auth** pad (geen login-blokkade), assertie op root/landings-UI (stabiele selector of `getByRole` waar mogelijk).
+- [x] **S8-Q03** `npm run test:e2e` (of `test:ui`) script + korte sectie in [`docs/qa/README.md`](docs/qa/README.md) (hoe lokaal draaien: stack + Vite verplicht).
+- [x] **S8-Q04** [`docs/qa/functional-checklist.md`](docs/qa/functional-checklist.md): regel toevoegen dat E2E-smoke **aanvult** checklist, niet vervangt.
 
 ### Definition of Done Sprint 8
 
-- [ ] Documentatie + (optioneel) scripts: **één** heldere “start lokaal”-flow; geen conflicterende instructies met `docker-compose.local.yml`.
-- [ ] Playwright smoke **groen** lokaals tegen draaiende **app (8000) + Vite (5173)**.
-- [ ] Geen harde afhankelijkheid van Ollama in de eerste E2E-tests (rooktest blijft apart).
+- [x] Documentatie + (optioneel) scripts: **één** heldere “start lokaal”-flow; geen conflicterende instructies met `docker-compose.local.yml`.
+- [x] Playwright smoke **groen** lokaal — minimaal tegen **Vite (:5173)**; eerste spec roept de API niet aan (Docker-stack niet verplicht voor deze smoke).
+- [x] Geen harde afhankelijkheid van Ollama in de eerste E2E-tests (rooktest blijft apart).
 - [ ] LeadPM kan gate gebruiken: handmatige checklist **of** geautomatiseerde smoke als onderdeel van “lokale kwaliteit”.
 
 ### Input per persona
@@ -603,4 +603,4 @@ Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-im
 
 ---
 
-*Bijgehouden door CoPM — laatste update: relationele DB-backlog + planning check (2026-04-04); Sprint 8 PVA (2026-03-12)*
+*Bijgehouden door CoPM — laatste update: Sprint 8 Playwright smoke merged (2026-05-02); eerdere repo-validatie (2026-05-02); relationele DB-backlog + planning check (2026-04-04); Sprint 8 PVA oorsprong (2026-03-12)*

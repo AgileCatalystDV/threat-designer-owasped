@@ -9,7 +9,16 @@ import babelParser from "@babel/eslint-parser";
 export default [
   // Ignore patterns
   {
-    ignores: ["node_modules/", "dist/", "build/", "coverage/", "htmlcov/", "infra/build/"],
+    ignores: [
+      "node_modules/",
+      "dist/",
+      "build/",
+      "coverage/",
+      "htmlcov/",
+      "infra/build/",
+      "e2e/",
+      "playwright.config.js",
+    ],
   },
 
   // Base configuration for all JS/JSX files

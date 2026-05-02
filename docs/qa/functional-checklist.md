@@ -17,6 +17,7 @@
 | 0.1b | `.env.local` aanwezig: `cp .env.local.example .env.local` (indien nog niet) | [ ] | Zie `docker-compose.local.yml` |
 | 0.2 | **Docker:** `npm run stack:up` (of `docker compose -f docker-compose.local.yml up --build`) — `dynamodb-init` **completed**, `minio` **healthy** | [ ] | Standaard **zonder** Sentry |
 | 0.3 | **Frontend:** `npm install` (eenmalig); `npm run dev` — browser op URL die Vite toont (meestal **http://localhost:5173**) | [ ] | |
+| 0.3b | **(Optioneel) E2E-smoke:** `npx playwright install chromium` (eenmalig); daarna `npm run test:e2e` — **aanvulling** op deze checklist, geen vervanging | [ ] | Zie [`docs/qa/README.md`](README.md) · [`e2e/smoke.spec.js`](../../e2e/smoke.spec.js) |
 | 0.4 | `.env.development` → `VITE_APP_ENDPOINT=http://localhost:8000` | [ ] | |
 | 0.5 | (Optioneel LLM) Ollama op host: `ollama serve` + model ge-pull’d | [ ] | Zonder Ollama: geen volledige AI-run |
 

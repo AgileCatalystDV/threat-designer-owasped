@@ -15,7 +15,15 @@
 | [**functional-checklist.md**](functional-checklist.md) | **Actief** — handmatig afvinken: happy paths + bekende foutpaden |
 | [`*.md` in deze map](.) | Optionele **QA-captures** (request/response dumps, LLM-logs) — ter referentie; geen vervanging voor pytest |
 | [assetresponsegemma4.md](assetresponsegemma4.md) | Gemma 4: `[TOOL_REQUEST]` + JSON `AssetsList` — unit test: `test_structured_tool_json_gemma.py` |
-| (later) E2E | Optioneel Playwright — alleen na KISS-checklist stabiel |
+| [dataflowresponsegemma4.md](dataflowresponsegemma4.md) | Gemma 4: `[TOOL_REQUEST]` + JSON `FlowsList` (finale tool-blok na channel-marker) — zelfde testmodule |
+| **E2E smoke (Playwright)** | `npm run test:e2e` — minimale UI-check (**geen** volledige threat-model/LLM-flow). Zie onder. |
+
+### Playwright (Sprint 8)
+
+- **Scripts:** `npm run test:e2e` · `npm run test:e2e:ui` · `npm run test:e2e:headed`
+- **Config:** [`playwright.config.js`](../../playwright.config.js) — `PLAYWRIGHT_BASE_URL` (default `http://localhost:5173`). Ontbreekt een draaiende Vite-dev-server, dan start Playwright `npm run dev` automatisch (`reuseExistingServer` buiten CI).
+- **Eerste install:** na `npm install` eenmalig `npx playwright install chromium`.
+- **Specs:** [`e2e/smoke.spec.js`](../../e2e/smoke.spec.js) — landingspagina + primaire CTA; **vult de checklist aan**, vervangt ze niet.
 
 ## Basis
 
