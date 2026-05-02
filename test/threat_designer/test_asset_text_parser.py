@@ -3,11 +3,17 @@ Unit tests for plain-text asset block extraction (prompt output_format).
 
 Uses `asset_text_blocks` only (stdlib + regex) — no langgraph/langchain required.
 `asset_text_parser.parse_assets_list_from_text` builds Pydantic models; run in Docker / full venv.
+
+Qwen full capture: ``@pytest.mark.manual`` + ``fixtures/qwen/assetresponseqwen.md`` (opt-in test).
 """
+
+from pathlib import Path
 
 import pytest
 
 from asset_text_blocks import extract_asset_dicts_from_text
+
+_QWEN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "qwen"
 
 SAMPLE_TWO_BLOCKS = """
 ## Assets
@@ -69,11 +75,11 @@ def test_extract_strips_thinking_then_finds_blocks():
 
 
 @pytest.mark.unit
+@pytest.mark.manual
 def test_extract_assetresponseqwen_answer_section_count():
-    """Volledige answer-sectie uit docs/qa/assetresponseqwen.md: 5 assets + 4 entities."""
-    from pathlib import Path
-
-    doc = Path(__file__).resolve().parent.parent.parent / "docs" / "qa" / "assetresponseqwen.md"
+    """Volledige answer-sectie uit Qwen-capture: 5 assets + 4 entities."""
+    doc = _QWEN_FIXTURES / "assetresponseqwen.md"
+    assert doc.is_file(), f"missing {doc}"
     text = doc.read_text(encoding="utf-8")
     start = text.find("## Assets")
     assert start != -1

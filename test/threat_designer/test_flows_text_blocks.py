@@ -2,11 +2,17 @@
 Unit tests for plain-text flow block extraction (data_flow, trust_boundary, threat table).
 
 Uses `flows_text_blocks` (stdlib + regex) and `flows_text_parser` for Pydantic `FlowsList`.
+
+Qwen reference capture (tagged blocks): ``fixtures/qwen/dataflowresonseqwen.md`` — ``@pytest.mark.manual``.
 """
+
+from pathlib import Path
 
 import pytest
 
 from flows_text_blocks import extract_flows_dict_from_text
+
+_QWEN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "qwen"
 
 SAMPLE_MINIMAL = """
 <data_flow>
@@ -131,3 +137,25 @@ def test_parse_flows_list_json_threat_actors_and_examples_alias():
     assert fl.threat_sources[0].category == "External Threat Actors"
     assert "Phishing" in fl.threat_sources[0].example
     assert "Scan" in fl.threat_sources[0].example
+
+
+@pytest.mark.unit
+@pytest.mark.manual
+def test_parse_qwen_dataflowresonseqwen_fixture_full_doc():
+    """Plain-text ``<data_flow>`` / ``<trust_boundary>`` / threat table — ``flows_text_blocks`` shape.
+
+    Matches ``flows_text_blocks`` docstring reference (same content as ``docs/qa/dataflowresonseqwen.md``).
+    """
+    from flows_text_parser import parse_flows_list_from_text
+
+    doc = _QWEN_FIXTURES / "dataflowresonseqwen.md"
+    assert doc.is_file(), f"missing {doc}"
+    text = doc.read_text(encoding="utf-8")
+    fl = parse_flows_list_from_text(text)
+    assert fl is not None
+    assert len(fl.data_flows) == 10
+    assert len(fl.trust_boundaries) == 6
+    assert len(fl.threat_sources) == 6
+    assert fl.data_flows[0].target_entity == "Web Application"
+    assert any(df.target_entity == "Database" for df in fl.data_flows)
+    assert fl.threat_sources[0].category == "Legitimate Users"

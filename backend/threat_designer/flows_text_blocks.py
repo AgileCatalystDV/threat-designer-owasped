@@ -73,6 +73,8 @@ def _parse_threat_actor_table(text: str) -> List[Dict[str, str]]:
         inner = [p.strip() for p in line.split("|") if p.strip()]
         if len(inner) < 3:
             continue
+        if inner[0] == "Category" and inner[1] == "Description":
+            continue
         rows.append(
             {
                 "category": inner[0],

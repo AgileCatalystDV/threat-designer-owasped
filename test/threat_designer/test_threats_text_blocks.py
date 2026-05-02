@@ -2,11 +2,16 @@
 Unit tests for plain-text threat JSON extraction (Qwen ``<parameter=threats>``).
 
 Uses ``threats_text_blocks`` (stdlib + json) and ``threats_text_parser`` for ``ThreatsList``.
+
+Full Qwen captures live under ``fixtures/qwen/*.md`` and are marked ``@pytest.mark.manual``
+(default pytest excludes them; run ``pytest -m manual test/threat_designer/``).
 """
 
 from pathlib import Path
 
 import pytest
+
+_QWEN_FIXTURES = Path(__file__).resolve().parent / "fixtures" / "qwen"
 
 from threats_text_blocks import extract_threat_dicts_from_text, merge_threat_rows_by_name
 
@@ -135,20 +140,15 @@ def test_merge_threat_rows_by_name_last_wins():
 
 
 @pytest.mark.unit
+@pytest.mark.manual
 def test_tmmodelthreatsthinkinghangsqwen_doc_when_present():
     """
     Long transcript with repeated ``add_threats`` / tool errors (see QA doc).
 
-    Requires ``docs/qa/tmmodelthreatsthinkinghangsqwen.md`` saved on disk.
+    Capture: ``fixtures/qwen/tmmodelthreatsthinkinghangsqwen.md``.
     """
-    doc = (
-        Path(__file__).resolve().parent.parent.parent
-        / "docs"
-        / "qa"
-        / "tmmodelthreatsthinkinghangsqwen.md"
-    )
-    if not doc.is_file() or doc.stat().st_size < 1000:
-        pytest.skip("docs/qa/tmmodelthreatsthinkinghangsqwen.md missing or empty on disk")
+    doc = _QWEN_FIXTURES / "tmmodelthreatsthinkinghangsqwen.md"
+    assert doc.is_file(), f"missing {doc}"
     text = doc.read_text(encoding="utf-8")
     rows = extract_threat_dicts_from_text(text)
     assert rows is not None
@@ -161,20 +161,15 @@ def test_tmmodelthreatsthinkinghangsqwen_doc_when_present():
 
 
 @pytest.mark.unit
+@pytest.mark.manual
 def test_tmfinalthreatmodelingrequestresponseqwen_full_file():
     """
     Regression: Qwen export with full request + assistant ``add_threats`` (12 threats).
 
-    See ``docs/qa/tmfinalthreatmodelingrequestresponseqwen.md``.
+    Capture: ``fixtures/qwen/tmfinalthreatmodelingrequestresponseqwen.md``.
     """
-    doc = (
-        Path(__file__).resolve().parent.parent.parent
-        / "docs"
-        / "qa"
-        / "tmfinalthreatmodelingrequestresponseqwen.md"
-    )
-    if not doc.is_file() or doc.stat().st_size < 1000:
-        pytest.skip("docs/qa/tmfinalthreatmodelingrequestresponseqwen.md missing or empty on disk")
+    doc = _QWEN_FIXTURES / "tmfinalthreatmodelingrequestresponseqwen.md"
+    assert doc.is_file(), f"missing {doc}"
     text = doc.read_text(encoding="utf-8")
     rows = extract_threat_dicts_from_text(text)
     assert rows is not None
@@ -188,16 +183,11 @@ def test_tmfinalthreatmodelingrequestresponseqwen_full_file():
 
 
 @pytest.mark.unit
+@pytest.mark.manual
 def test_threatsmodelingresponseqwen_doc_when_present():
-    """Regression: full Qwen export in ``docs/qa/threatsmodelingresponseqwen.md`` (12 threats)."""
-    doc = (
-        Path(__file__).resolve().parent.parent.parent
-        / "docs"
-        / "qa"
-        / "threatsmodelingresponseqwen.md"
-    )
-    if not doc.is_file() or doc.stat().st_size < 100:
-        pytest.skip("docs/qa/threatsmodelingresponseqwen.md missing or empty on disk")
+    """Regression: full Qwen export (12 threats). Capture: ``fixtures/qwen/threatsmodelingresponseqwen.md``."""
+    doc = _QWEN_FIXTURES / "threatsmodelingresponseqwen.md"
+    assert doc.is_file(), f"missing {doc}"
     text = doc.read_text(encoding="utf-8")
     rows = extract_threat_dicts_from_text(text)
     assert rows is not None

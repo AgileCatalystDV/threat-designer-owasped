@@ -12,6 +12,8 @@ Gebruik dit document als **GitHub PR-beschrijving** (copy-paste) of als checklij
 - **Gemma-compat**: tool-output kan `<channel|>[TOOL_REQUEST]` bevatten en meerdere blokken in één transcript; we nemen het **laatste** relevante fragment en parsen daarna pas JSON.
 - **FlowsList JSON-varianten**: sommige modellen leveren `threat_actors` i.p.v. `threat_sources`, of `examples` (lijst) i.p.v. `example` — normaliseren vóór Pydantic-validatie.
 - **Logging**: `print` vervangen door **structured logging** op foutpaden (backend service, init-script, MCP), zodat stack traces en context in logs landen i.p.v. stdout-ruis.
+- **Qwen corpora (manual)**: volledige LM Studio-tekstcaptures onder `test/threat_designer/fixtures/qwen/` — alleen als je **`pytest -m manual`** draait (default suite sluit ze uit via `pytest.ini`).
+- **Threat markdown-tabel**: headerrij `Category | Description | Examples` wordt niet meer als data ingelezen (Qwen-export).
 
 ---
 
@@ -30,6 +32,7 @@ Gebruik dit document als **GitHub PR-beschrijving** (copy-paste) of als checklij
 |---------|-----|--------|
 | `backend/threat_designer/tool_request_markers.py` | Constante `GEMMA_CHANNEL_TOOL_SUFFIX`, functie `slice_from_last_gemma_channel_tool_request` | Gemma plakt soms kanaal-syntax vóór `[TOOL_REQUEST]`. Er kunnen **meerdere** tool-blokken in de tekst staan (prompt-voorbeelden); alleen het **laatste** `<channel|>[TOOL_REQUEST]…` is de echte model-output. |
 | `backend/threat_designer/flows_text_parser.py` | `_normalize_flows_list_arguments`, `_normalize_threat_source_dict`, `_coerce_example_field`, `_json_has_flows_list_shape` | LLM’s wijken af van het strakke schema: alias `threat_actors` → `threat_sources`, `examples` als lijst → één `example`-string, enz. Zonder normalisatie faalt `FlowsList.model_validate` terwijl de inhoud semantisch klopt. |
+| `backend/threat_designer/flows_text_blocks.py` | Extra skip in `_parse_threat_actor_table`: rij met eerste cellen exact `Category` / `Description` | Voorkomt dat een pipe-tabel **header** dubbel als eerste threat-source wordt geïnterpreteerd (typisch in `dataflowresonseqwen`-achtige exports). |
 | `backend/threat_designer/model_service.py` | Voor `FlowsList`: eerst `slice_from_last_gemma_channel_tool_request` op de ruwe tekst, daarna `normalize_text_for_structured_fallback` | De volgorde is cruciaal: eerst het juiste transcriptfragment, dan marker-normalisatie en parsing. |
 | `backend/threat_designer/attack_tree_models.py` | `logging` i.p.v. `print` in `__main__` demo | Geen ruis op stdout in voorbeeld-run; consistent met rest. |
 | `backend/threat_designer/tools.py` | Docstring-voorbeelden: geen `print` in doctest-blokken; assertions i.p.v. uitvoer vergelijken | Voorkomt dat voorbeelden impliciet “run output” verwachten; blijft copy-paste-vriendelijk voor developers. |
@@ -54,6 +57,8 @@ Gebruik dit document als **GitHub PR-beschrijving** (copy-paste) of als checklij
 | `test/threat_designer/test_tool_request_markers.py` | Tests voor `slice_from_last_gemma_channel_tool_request` (met/zonder punt, geen match) | Regressie op Gemma-suffix en fallback gedrag. |
 | `test/threat_designer/test_flows_text_blocks.py` | `test_parse_flows_list_json_threat_actors_and_examples_alias` | Vergrendelt normalisatie van `threat_actors` + `examples` (lijst). |
 | `test/threat_designer/test_structured_tool_json_gemma.py` | End-to-end parsing op **capture-fixtures** + synthetische varianten | Bewijs dat echte Gemma-vorm (channel + laatste tool-call + FlowsList JSON) parseert; fixtures staan **onder** `test/threat_designer/fixtures/` zodat PR-A **niet** afhangt van `docs/qa/*.md` (die gaan naar PR-B). |
+| `test/threat_designer/test_threats_text_blocks.py` (3 tests), `test_asset_text_parser.py` (1), `test_flows_text_blocks.py` (1) | `@pytest.mark.manual` + pad naar `fixtures/qwen/*.md` | Zelfde regressies als voorheen op `docs/qa/`, nu ingecheckt onder `test/`; alleen op aanvraag draaien. |
+| `pytest.ini` | `-m "not manual"` in `addopts`; marker `manual` geregistreerd | Standaard-CI/lokale run blijft snel; corpus-tests opt-in. |
 
 ### Nieuwe test-fixtures
 
@@ -61,6 +66,8 @@ Gebruik dit document als **GitHub PR-beschrijving** (copy-paste) of als checklij
 |-----|-----|--------|
 | `test/threat_designer/fixtures/gemma4_asset_capture.md` | Snapshot van Gemma 4 **AssetsList**-achtige output | Zelfde inhoud als bedoelde QA-doc in `docs/qa/`; hier als **bron voor pytest** zodat CI/review geen geünificeerde docs-PR nodig heeft. |
 | `test/threat_designer/fixtures/gemma4_dataflow_capture.md` | Snapshot van Gemma 4 **FlowsList** (data flows + boundaries + threat sources) | Idem; bevat o.a. `Format as requested.<channel|>[TOOL_REQUEST]` zodat slice-logica getest is. |
+| `test/threat_designer/fixtures/qwen/*.md` | Qwen 3.5 exports: assets, threats (3 varianten), dataflow tagged blocks | Zelfde inhoud als de corresponderende `docs/qa/*.md` op het moment van copy; PR-B kan docs aanvullen zonder tests te breken. |
+| `test/threat_designer/fixtures/qwen/README.txt` + `images/.gitkeep` | Instructie + lege map | **PNG/JPG** van het architectuurdiagram optioneel in `images/` — tests gebruiken **geen** binary; alleen ter referentie voor menselijke replay of latere uitbreiding. |
 
 **Afspraak met PR-B:** de onderliggende captures kunnen **ook** in `docs/qa/` gezet worden voor menselijke leesbaarheid; inhoud **sync houden** met fixtures of expliciet vermelden dat docs een kopie zijn.
 
@@ -73,6 +80,12 @@ export PYTHONPATH=backend/threat_designer
 python3 -m pytest test/threat_designer/ -v --tb=short
 ```
 
+**Qwen corpus (manual)** — zelfde checkout, extra flag:
+
+```bash
+python3 -m pytest -m manual test/threat_designer/ -v --tb=short
+```
+
 Optioneel vollediger:
 
 ```bash
@@ -83,9 +96,9 @@ python3 -m pytest test/ -q
 
 ---
 
-## Wat zit **niet** in PR-A
+## Wat zit **niet** (of alleen als spiegel) in PR-A
 
-- Wijzigingen uitsluitend in `docs/qa/*` (lange Qwen/Gemma narrative dumps, checklistteksten) → **PR-B**.
+- **Optioneel PR-B:** aanvullende of herschreven narrative-only varianten in `docs/qa/*` — tests hangen af van **fixtures** onder `test/threat_designer/fixtures/`, niet van `docs/qa/`.
 
 ---
 
