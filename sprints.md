@@ -662,6 +662,23 @@ Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-im
 - [ ] **S9-04** Tweede fixture-set (**ander model**) — bewijst dat multi-model werkt.
 - [ ] **S9-05** Optioneel: aparte **snelle** CI-job alleen `smoke.spec` (of matrix-handvat) — alleen als het team snellere signal wil naast de volledige suite.
 - [ ] **S9-06** **CI Playwright (verplaatste S8-D03):** GitHub Actions-workflow — `npm run test:e2e` (of dedicated Playwright-project) tegen stack met **uitsluitend gemockte** inference; **geen** LM Studio / live GPU in Actions. DoD: groene run op `main` na merge van S9-03/04.
+- [ ] **S9-E01** *Optioneel (verkenning, geen S9-DoD-blokker):* zie [§ Verkenning — RDBMS (parallel)](#verkenning--rdbms-parallel-aan-sprint-9).
+
+<a id="verkenning--rdbms-parallel-aan-sprint-9"></a>
+
+### Verkenning — RDBMS (parallel aan Sprint 9)
+
+**Niet** onderdeel van de **kerndoelstellingen** van Sprint 9 (gemockte LLM + Playwright/CI). Wel logische **voorbereiding** op de [relationele-DB-backlog](#backlog-rdbms) zodra LeadPM **go** geeft.
+
+| Onderdeel | Wat / waarom |
+|-----------|----------------|
+| **Probleem** | DynamoDB Local draait **in-memory** in Compose — dev-data overleeft geen herstart. Relationeel (Postgres/MySQL) zou **persistentie** + vertrouwde SQL-tooling geven, maar is **geen** drop-in t.o.v. huidig datamodel. |
+| **Hoe moeilijk?** | **Spike / inventarisatie** (waar roept de code Dynamo aan): laag tot matig, goed timeboxbaar. **Volledige migratie** achter één interface: matig tot zwaar (breedte + schema-ontwerp), zie tabel in [§ Backlog RDBMS](#backlog-rdbms). |
+| **Aanbevolen verkennings-output** (vóór eerste Postgres-spike) | (1) **Inventarisatie** — kort overzicht welke packages/modules `boto3` / `get_dynamodb` / tabelnamen raken (handmatige `rg` of script + samenvatting). (2) **Grensschets** — waar zou één **data-access-laag** (repository) logisch komen (niet: volledig ontwerp). (3) **Risico’s** — locks, conditionele writes, single-table-patronen. |
+| **Waar vastleggen** | Primair in **deze sectie** (tabel invullen) of minimaal `docs/planning/rdbms-exploration.md` als het document langer wordt — **geen** verplichting in S9-DoD. |
+| **Koppeling mocks (S9)** | Gemockte OpenAI-responses in Playwright hebben **geen** technische afhankelijkheid van RDBMS; eventuele E2E-tests kunnen blijven vertrouwen op DynamoDB Local **of** later op Postgres zodra die adapter bestaat. |
+
+**Taak (optioneel): S9-E01** — bovenstaande inventarisatie + grensschets **één keer** uitwerken wanneer Dev/CoPM capaciteit hebben; **LeadPM-go** blijft vereist vóór echte implementatie. Leidt niet tot merge-vereiste voor S9-03/04/06.
 
 <a id="leadpm--minitaken-sprint-9-uitvoering--ci"></a>
 
@@ -675,16 +692,20 @@ Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-im
 | L9-4 | **Multi-model proof:** **S9-04** — tweede fixture-set; jij kiest welk tweede model relevant is voor OWASP-demo (samenesscheck met CoPM). | [ ] |
 | L9-5 | **CI:** na **S9-06** — controleer dat workflow **geen** secrets naar externe inference stuurt en dat falende Playwright **merge blokkeert** (branch protection of teamafspraak). | [ ] |
 | L9-6 | **Sprint 9-close:** functionele checklist + pytest backend ongewijzigd groen; documentatie in [`docs/qa/README.md`](docs/qa/README.md) bijgewerkt met “hoe mocked E2E lokaal draaien”. | [ ] |
+| L9-7 | *Optioneel:* **RDBMS-verkenning** — akkoord dat **S9-E01** buiten mocked-E2E-DoD valt; review alleen inventarisatie/grensschets wanneer die klaar is (zie [§ Verkenning — RDBMS](#verkenning--rdbms-parallel-aan-sprint-9)). | [ ] |
 
 ### Afhankelijkheden
 
 - Sprint 8: stabiele **commit** van agent/parsers + duidelijke **contract**-afbakening voor welke responses gemocked worden.
+- **Relationele DB:** geen afhankelijkheid voor S9 mocked Playwright — verkenning parallel mogelijk; zie [§ Verkenning — RDBMS](#verkenning--rdbms-parallel-aan-sprint-9) en [§ Backlog RDBMS](#backlog-rdbms).
 
 <a id="backlog-rdbms"></a>
 
 ### Backlog — relationele database (PostgreSQL of MySQL i.p.v. DynamoDB Local)
 
 **Status:** niet gestart — **expliciete LeadPM-go** vóór eerste spike. Geen automatische sprintnummering tot scope en timing vastliggen.
+
+**Planning:** verkenningskader en optionele taak **S9-E01** staan onder [Sprint 9 — § Verkenning — RDBMS](#verkenning--rdbms-parallel-aan-sprint-9) (parallel aan gemockte E2E, geen blokker).
 
 **Waarom (context):** DynamoDB Local draait in de huidige Compose-setup met **`-inMemory`** — data overleeft geen container-stop; MinIO blijft wél via volume. Een relationele DB (PostgreSQL of MySQL) kan **persistente** dev-data en bekende SQL-tooling bieden, maar is **niet** drop-in qua datamodel (DynamoDB single-table / partitiepatronen ≠ relationele normalisatie).
 
@@ -702,4 +723,4 @@ Zie [`docs/llm-assets-format-and-improvements.md`](docs/llm-assets-format-and-im
 
 ---
 
-*Bijgehouden door CoPM — laatste update: LeadPM-besluiten KISS / LM Studio prep vs S9 / S9-06 CI + minitaken LeadPM (2026-05-02); Sprint 8 increment + Sprint 9 stub + LM Studio-afstemming; Playwright smoke merged (2026-05-02); relationele DB-backlog + planning check (2026-04-04); Sprint 8 PVA oorsprong (2026-03-12)*
+*Bijgehouden door CoPM — laatste update: Sprint 9 RDBMS-verkenningssectie + S9-E01/L9-7 kruislinks naar backlog (2026-05-02); LeadPM-besluiten KISS / LM Studio prep vs S9 / S9-06 CI; Sprint 8 increment; Playwright smoke merged (2026-05-02); relationele DB-backlog (2026-04-04); Sprint 8 PVA oorsprong (2026-03-12)*
