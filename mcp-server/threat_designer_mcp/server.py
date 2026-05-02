@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -12,6 +13,8 @@ import httpx
 from mcp.server.fastmcp import Context, FastMCP
 from threat_designer_mcp.state import StartThreatModeling
 from threat_designer_mcp.utils import transform_threat_models, validate_image
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -272,7 +275,7 @@ async def poll_threat_model_status(ctx: Context, model_id: str) -> str:
 
         except httpx.RequestError as e:
             # If there's an error querying the status, log it but continue polling
-            print(f"Error querying status: {e}")
+            logger.error("Error querying status: %s", e, exc_info=True)
             await asyncio.sleep(POLLING_INTERVAL)
 
 

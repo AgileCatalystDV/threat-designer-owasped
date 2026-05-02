@@ -110,3 +110,24 @@ def test_parse_flows_list_from_text_roundtrip():
     assert len(fl.trust_boundaries) == 1
     assert len(fl.threat_sources) == 2
     assert fl.threat_sources[1].example == "Web attacker"
+
+
+@pytest.mark.unit
+def test_parse_flows_list_json_threat_actors_and_examples_alias():
+    """LLM JSON: ``threat_actors`` key and/or ``examples`` (plural) per row."""
+    from flows_text_parser import parse_flows_list_from_text
+
+    payload = """
+[TOOL_REQUEST]
+{"name": "FlowsList", "arguments": {"data_flows": [{"flow_description": "a", "source_entity": "S", "target_entity": "T"}], "trust_boundaries": [{"purpose": "p", "source_entity": "S", "target_entity": "T"}], "threat_actors": [{"category": "External Threat Actors", "description": "d", "examples": ["Phishing", "Scan"]}]}}
+[END_TOOL_REQUEST]
+"""
+    from tool_request_markers import normalize_text_for_structured_fallback
+
+    inner = normalize_text_for_structured_fallback(payload)
+    fl = parse_flows_list_from_text(inner)
+    assert fl is not None
+    assert len(fl.threat_sources) == 1
+    assert fl.threat_sources[0].category == "External Threat Actors"
+    assert "Phishing" in fl.threat_sources[0].example
+    assert "Scan" in fl.threat_sources[0].example

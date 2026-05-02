@@ -18,8 +18,11 @@ Usage:
     react_flow_data = tree.to_react_flow()
 """
 
+import logging
 from typing import List, Optional, Literal, Union
 from pydantic import BaseModel, Field
+
+_logger = logging.getLogger(__name__)
 
 
 # ============================================================================
@@ -720,6 +723,7 @@ class AttackTreeConverter:
 
 # Example usage
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     # Example: LLM generates this simple structure
     logical_tree = AttackTreeLogical(
         goal="Exfiltrate PII from All Cognito Users",
@@ -754,4 +758,4 @@ if __name__ == "__main__":
 
     # Convert to React Flow format
     react_flow_data = logical_tree.to_react_flow()
-    print(react_flow_data)
+    _logger.info("%s", react_flow_data)

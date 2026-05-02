@@ -101,7 +101,13 @@ def delete_s3_object(object_key, bucket_name=ARCHITECTURE_BUCKET):
         return response
 
     except ClientError as e:
-        print(f"Error deleting object {object_key} from bucket {bucket_name}: {e}")
+        LOG.error(
+            "Error deleting object %s from bucket %s: %s",
+            object_key,
+            bucket_name,
+            e,
+            exc_info=True,
+        )
         raise
 
 
@@ -175,7 +181,7 @@ def update_dynamodb_item(
                 "Update rejected: Owner validation failed or locked attributes cannot be modified"
             )
         else:
-            print(f"Error updating item: {e}")
+            LOG.error("Error updating item: %s", e, exc_info=True)
         raise
 
 
@@ -231,7 +237,7 @@ def delete_dynamodb_item(table, key, owner):
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             raise UnauthorizedError("Delete rejected: Owner validation failed")
         else:
-            print(f"Error deleting item: {e}")
+            LOG.error("Error deleting item: %s", e, exc_info=True)
         raise
 
 
@@ -396,9 +402,8 @@ def check_status(job_id):
             return {"id": job_id, "state": "Not Found"}
 
     except Exception as e:
-        print(e)
+        LOG.exception("check_status failed for job_id=%s", job_id)
         raise InternalError(e)
-
 
 
 def check_trail(job_id):
@@ -424,9 +429,8 @@ def check_trail(job_id):
             return {"id": job_id}
 
     except Exception as e:
-        print(e)
+        LOG.exception("check_trail failed for job_id=%s", job_id)
         raise InternalError(e)
-
 
 
 def fetch_results(job_id, user_id=None):

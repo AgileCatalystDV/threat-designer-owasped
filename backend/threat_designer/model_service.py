@@ -20,7 +20,10 @@ from monitoring import logger, with_error_context
 from gap_analysis_text_parser import parse_continue_threat_modeling_from_text
 from state import AssetsList, ContinueThreatModeling, FlowsList, ThreatsList
 from threats_text_parser import parse_threats_list_from_text
-from tool_request_markers import normalize_text_for_structured_fallback
+from tool_request_markers import (
+    normalize_text_for_structured_fallback,
+    slice_from_last_gemma_channel_tool_request,
+)
 from utils import extract_text_from_base_message, handle_asset_error, sanitize_tool_invocation_args
 
 # Max characters per field in debug logs (override via LLM_DEBUG_RESPONSE_MAX_CHARS)
@@ -196,9 +199,10 @@ class ModelService:
                     ):
                         raise
 
-            text = normalize_text_for_structured_fallback(
-                extract_text_from_base_message(resp)
-            )
+            text = extract_text_from_base_message(resp)
+            if tool_class is FlowsList:
+                text = slice_from_last_gemma_channel_tool_request(text)
+            text = normalize_text_for_structured_fallback(text)
             if tool_class is AssetsList:
                 parsed = parse_assets_list_from_text(text)
                 if parsed is not None:

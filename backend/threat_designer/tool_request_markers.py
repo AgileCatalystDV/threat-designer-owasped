@@ -13,6 +13,11 @@ from typing import Optional
 MARKER_START = "[TOOL_REQUEST]"
 MARKER_END = "[END_TOOL_REQUEST]"
 
+# Gemma channel + tool wrapper (see docs/qa/dataflowresponsegemma4.md).
+# Covers both ``….<channel|>[TOOL_REQUEST]`` and ``…<channel|>[TOOL_REQUEST]`` — the
+# substring ``<channel|>[TOOL_REQUEST]`` is shared; slice from its last occurrence.
+GEMMA_CHANNEL_TOOL_SUFFIX = "<channel|>[TOOL_REQUEST]"
+
 
 def extract_inner_payload(text: str) -> Optional[str]:
     """
@@ -32,6 +37,21 @@ def extract_inner_payload(text: str) -> Optional[str]:
         return None
     inner = after_start[:j].strip()
     return inner
+
+
+def slice_from_last_gemma_channel_tool_request(text: str) -> str:
+    """
+    If Gemma-style ``<channel|>[TOOL_REQUEST]`` appears, return ``text`` sliced
+    from the **last** occurrence so earlier prompt examples are dropped.
+
+    If absent, return ``text`` unchanged (Qwen / plain ``[TOOL_REQUEST]``).
+    """
+    if not text or not isinstance(text, str):
+        return text
+    start = text.rfind(GEMMA_CHANNEL_TOOL_SUFFIX)
+    if start >= 0:
+        return text[start:]
+    return text
 
 
 def normalize_text_for_structured_fallback(text: str) -> str:

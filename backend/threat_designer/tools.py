@@ -48,8 +48,7 @@ def _calculate_threat_kpis(
 
     Example:
         >>> kpis = _calculate_threat_kpis(threat_list, assets, system_architecture)
-        >>> print(kpis['total_threats'])
-        45
+        >>> kpis['total_threats']  # e.g. 45
     """
     # Handle empty catalog
     if not threat_list or not threat_list.threats:
@@ -216,12 +215,9 @@ def _format_kpis_for_prompt(kpis: Dict[str, Any]) -> str:
 
     Example:
         >>> kpis = _calculate_threat_kpis(threat_list)
-        >>> formatted = _format_kpis_for_prompt(kpis)
-        >>> print(formatted)
-        <threat_catalog_kpis>
-        **Total Threats**: 45
-        ...
-        </threat_catalog_kpis>
+        >>> block = _format_kpis_for_prompt(kpis)
+        >>> block.startswith("<threat_catalog_kpis>")
+        True
     """
     # Handle empty catalog
     if kpis["total_threats"] == 0:

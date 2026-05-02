@@ -25,11 +25,14 @@ Environment variables:
     SHARING_TABLE       — default: threat-designer-sharing
 """
 
+import logging
 import os
 import sys
 import time
 import boto3
 from botocore.exceptions import ClientError
+
+logger = logging.getLogger("init_dynamo")
 
 ENDPOINT = os.environ.get("DYNAMODB_ENDPOINT", "http://localhost:8001")
 REGION = os.environ.get("AWS_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
@@ -176,12 +179,16 @@ def wait_for_dynamodb(client: boto3.client, retries: int = 20, delay: float = 2.
     for attempt in range(1, retries + 1):
         try:
             client.list_tables()
-            print(f"[init_dynamo] DynamoDB Local reachable at {ENDPOINT}")
+            logger.info("DynamoDB Local reachable at %s", ENDPOINT)
             return
         except Exception as exc:
-            print(f"[init_dynamo] Waiting for DynamoDB Local... ({attempt}/{retries}): {exc}")
+            logger.info(
+                "Waiting for DynamoDB Local... (%s/%s): %s", attempt, retries, exc
+            )
             time.sleep(delay)
-    print("[init_dynamo] ERROR: DynamoDB Local not reachable after retries. Exiting.", file=sys.stderr)
+    logger.error(
+        "DynamoDB Local not reachable after %s retries. Exiting.", retries
+    )
     sys.exit(1)
 
 
@@ -189,10 +196,10 @@ def create_table(client: boto3.client, definition: dict) -> None:
     table_name = definition["TableName"]
     try:
         client.create_table(**definition)
-        print(f"[init_dynamo] Created table: {table_name}")
+        logger.info("Created table: %s", table_name)
     except ClientError as exc:
         if exc.response["Error"]["Code"] == "ResourceInUseException":
-            print(f"[init_dynamo] Table already exists (skipped): {table_name}")
+            logger.info("Table already exists (skipped): %s", table_name)
         else:
             raise
 
@@ -203,17 +210,22 @@ def enable_ttl(client: boto3.client, table_name: str, attribute: str) -> None:
             TableName=table_name,
             TimeToLiveSpecification={"Enabled": True, "AttributeName": attribute},
         )
-        print(f"[init_dynamo] TTL enabled on {table_name}.{attribute}")
+        logger.info("TTL enabled on %s.%s", table_name, attribute)
     except ClientError as exc:
         code = exc.response["Error"]["Code"]
         if code in ("ValidationException", "ResourceInUseException"):
-            print(f"[init_dynamo] TTL already set on {table_name} (skipped)")
+            logger.info("TTL already set on %s (skipped)", table_name)
         else:
             raise
 
 
 def main() -> None:
-    print(f"[init_dynamo] Connecting to DynamoDB at {ENDPOINT} (region={REGION})")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(name)s] %(message)s",
+        stream=sys.stdout,
+    )
+    logger.info("Connecting to DynamoDB at %s (region=%s)", ENDPOINT, REGION)
 
     client = boto3.client(
         "dynamodb",
@@ -231,7 +243,7 @@ def main() -> None:
     # TTL is a separate API call (not supported in create_table for DynamoDB Local)
     enable_ttl(client, TABLE_LOCK, "ttl")
 
-    print("[init_dynamo] All tables initialised successfully.")
+    logger.info("All tables initialised successfully.")
 
 
 if __name__ == "__main__":

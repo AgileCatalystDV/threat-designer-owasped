@@ -7,6 +7,7 @@ from tool_request_markers import (
     MARKER_START,
     extract_inner_payload,
     normalize_text_for_structured_fallback,
+    slice_from_last_gemma_channel_tool_request,
 )
 
 
@@ -47,3 +48,24 @@ def test_missing_end_returns_original():
 def test_extract_inner_payload_json():
     raw = '[TOOL_REQUEST]\n{"assets":[]}\n[END_TOOL_REQUEST]'
     assert extract_inner_payload(raw) == '{"assets":[]}'
+
+
+@pytest.mark.unit
+def test_slice_gemma_channel_after_sentence_dot():
+    """``.<channel|>`` — slice starts at ``<`` (suffix is enough)."""
+    text = "intro.<channel|>[TOOL_REQUEST]\n{}\n[END_TOOL_REQUEST]"
+    out = slice_from_last_gemma_channel_tool_request(text)
+    assert out.startswith("<channel|>[TOOL_REQUEST]")
+
+
+@pytest.mark.unit
+def test_slice_gemma_channel_without_sentence_dot():
+    text = "intro x<channel|>[TOOL_REQUEST]\n{}\n[END_TOOL_REQUEST]"
+    out = slice_from_last_gemma_channel_tool_request(text)
+    assert out.startswith("<channel|>[TOOL_REQUEST]")
+
+
+@pytest.mark.unit
+def test_slice_gemma_channel_no_match_returns_original():
+    raw = "Type: Asset\nName: Foo\n"
+    assert slice_from_last_gemma_channel_tool_request(raw) == raw
